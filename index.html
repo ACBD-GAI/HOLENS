@@ -61,7 +61,7 @@
       </section>
       <div class="toolbar"><div id="resultCount" class="result-count">Loading inventory…</div><button id="resetBtn" class="reset">RESET CHECKS</button></div>
       <section id="cards" class="cards"><div class="empty">Connecting to Supabase…</div></section>
-      <nav id="pagination" class="pagination hidden" aria-label="Inventory pages"><button id="prevPage" class="page-btn" type="button">← PREV</button><div id="pageInfo" class="page-info">PAGE 1 OF 1</div><button id="nextPage" class="page-btn" type="button">NEXT →</button></nav>
+      <nav id="pagination" class="pagination hidden" aria-label="Inventory pages"><button id="prevPage" class="page-btn" type="button">← PREVIOUS</button><div id="pageInfo" class="page-info">ITEM 1 OF 1</div><button id="nextPage" class="page-btn" type="button">NEXT →</button></nav>
       <div class="footer">Stock list from Google Sheets · Checks saved in Supabase</div>
     </div>
   </main>
@@ -93,7 +93,7 @@
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_SA_OZCUkyHiWR6O7CwYYhQ_DpP9m3ah';
     const TABLE = 'ho_lens_inventory';
     const SYNC_FUNCTION = 'sync-ho-lens-from-google-sheet';
-    const PAGE_SIZE = 10;
+    const PAGE_SIZE = 1;
     const { createClient } = window.supabase || {};
 
     const $ = (id) => document.getElementById(id);
@@ -154,8 +154,8 @@
       const last=start+visible.length;
       $('resultCount').textContent=found.length?`Showing ${first}–${last} of ${found.length} lenses · Excel order`:'0 lenses found';
       $('cards').innerHTML=visible.length?visible.map(cardHTML).join(''):'<div class="empty">No active lenses found. Check your search or filters.</div>';
-      $('pagination').classList.toggle('hidden',totalPages<=1);
-      $('pageInfo').textContent=`PAGE ${state.currentPage} OF ${totalPages}`;
+      $('pagination').classList.toggle('hidden',found.length===0);
+      $('pageInfo').textContent=`ITEM ${found.length ? start+1 : 0} OF ${found.length}`;
       $('prevPage').disabled=state.currentPage<=1;
       $('nextPage').disabled=state.currentPage>=totalPages;
     }
