@@ -139,19 +139,13 @@
         <div><div class="modal-eyebrow">HO · STOCK CONTROL</div><h3 id="reportModalTitle">Inventory report</h3></div>
         <button type="button" id="closeReportBtn" class="icon-close" aria-label="Close report">×</button>
       </div>
-      <p class="report-intro">Excel report uses the latest synced Google Sheet rows, source columns A–D only (including zero-QTY rows). Tap SYNC first if the Google Sheet was recently changed. The total lens quantity is shown separately in column E.</p>
-      <div class="report-summary">
-        <div class="report-summary-main"><span>REPORT ROWS</span><strong id="reportRowsCount">—</strong></div>
-        <div class="report-summary-total"><span>TOTAL LENS QTY</span><strong id="reportTotalQty">—</strong></div>
-      </div>
-      <div id="reportLoadMessage" class="report-load-message">Loading current Google Sheet data…</div>
+
       <label class="label" for="reportRecipient">Send report to email</label>
       <input id="reportRecipient" class="field" type="email" inputmode="email" autocomplete="email" placeholder="recipient@example.com">
       <div class="report-actions">
         <button type="button" id="downloadReportBtn" class="secondary report-download" disabled>DOWNLOAD EXCEL</button>
         <button type="button" id="sendReportBtn" class="report-send" disabled>EMAIL REPORT</button>
       </div>
-      <p class="report-footnote">Email is sent from your Google account using the separate Apps Script emailer. Download Excel works without email setup.</p>
     </section>
   </div>
 
@@ -457,16 +451,17 @@
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
     }
     async function openReportModal(){
-      $('reportBackdrop').classList.remove('hidden');$('reportRowsCount').textContent='…';$('reportTotalQty').textContent='…';
-      $('reportLoadMessage').textContent='Loading all current Google Sheet rows, including zero-QTY items…';
-      $('downloadReportBtn').disabled=true;$('sendReportBtn').disabled=true;state.reportRows=null;
+      $('reportBackdrop').classList.remove('hidden');
+      $('downloadReportBtn').disabled=true;
+      $('sendReportBtn').disabled=true;
+      state.reportRows=null;
       try{
         state.reportRows=await fetchReportRows();
-        const total=state.reportRows.reduce((sum,r)=>sum+(Number(r.qty)||0),0);
-        $('reportRowsCount').textContent=state.reportRows.length.toLocaleString();$('reportTotalQty').textContent=total.toLocaleString();
-        $('reportLoadMessage').textContent='Ready. The Excel report includes source columns A–D and a frozen header row.';
-        $('downloadReportBtn').disabled=false;$('sendReportBtn').disabled=false;
-      }catch(err){$('reportLoadMessage').textContent='Could not load report data: '+(err?.message||String(err));}
+        $('downloadReportBtn').disabled=false;
+        $('sendReportBtn').disabled=false;
+      }catch(err){
+        showToast('Could not load report data: '+(err?.message||String(err)),8500);
+      }
     }
     function closeReportModal(){$('reportBackdrop').classList.add('hidden');}
     async function downloadExcelReport(){
