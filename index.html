@@ -1,442 +1,254 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <base target="_top">
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#126b52">
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#102c27">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>HO Lens Inventory</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    :root {
-      --ink: #17211d;
-      --muted: #66736d;
-      --line: #e2e9e5;
-      --panel: #ffffff;
-      --canvas: #f2f6f3;
-      --green: #126b52;
-      --green-dark: #0e5742;
-      --green-soft: #e6f4ee;
-      --red: #b42336;
-      --red-soft: #fff0f1;
-      --amber: #95620b;
-      --amber-soft: #fff6df;
-      --shadow: 0 5px 18px rgba(22, 48, 37, .06);
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html { background: var(--canvas); }
-    body {
-      margin: 0; color: var(--ink); background: var(--canvas);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      font-size: 15px; -webkit-text-size-adjust: 100%;
-    }
-    button, input, select { font: inherit; }
-    button { touch-action: manipulation; }
-
-    /* The inventory UI is intentionally withheld on desktop-sized/non-phone devices. */
-    .page { display: none; width: 100%; max-width: 620px; min-height: 100vh; margin: 0 auto; padding: 16px 13px calc(28px + env(safe-area-inset-bottom)); }
-    html.phone-mode .page { display: block; }
-    .desktop-blocker {
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 28px; text-align: center; color: var(--ink);
-    }
-    html.phone-mode .desktop-blocker { display: none; }
-    .desktop-card { max-width: 360px; background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 28px 22px; box-shadow: var(--shadow); }
-    .desktop-icon { width: 64px; height: 64px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 18px; background: var(--green-soft); color: var(--green); font-size: 30px; }
-    .desktop-card h1 { margin: 0 0 9px; font-size: 23px; }
-    .desktop-card p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 14px; }
-
-    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 15px; }
-    .eyebrow { color: var(--green); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
-    h1 { margin: 5px 0 5px; font-size: 26px; line-height: 1.1; letter-spacing: -.045em; }
-    .subhead { color: var(--muted); font-size: 12px; line-height: 1.4; max-width: 340px; }
-    .top-actions { display: flex; flex-direction: column; gap: 7px; flex: 0 0 auto; }
-    button { border: 0; border-radius: 11px; min-height: 43px; padding: 0 13px; font-weight: 800; cursor: pointer; }
-    button:disabled { opacity: .5; cursor: wait; }
-    .btn-secondary { background: #fff; border: 1px solid var(--line); color: #34433c; }
-    .btn-reset { background: var(--red-soft); border: 1px solid #f1cbd0; color: var(--red); font-size: 12px; }
-
-    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 11px; }
-    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 11px 12px; box-shadow: 0 2px 9px rgba(22,48,37,.025); }
-    .stat-label { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
-    .stat-value { margin-top: 3px; font-size: 23px; line-height: 1.05; font-weight: 900; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
-    .stat-foot { color: var(--muted); font-size: 10px; margin-top: 3px; }
-
-    .toolbar { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; margin-bottom: 10px; box-shadow: 0 2px 9px rgba(22,48,37,.025); }
-    .search-wrap input, .toolbar select { appearance: none; width: 100%; min-width: 0; height: 48px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; outline: none; background: #fbfdfc; color: var(--ink); font-size: 15px; }
-    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-    .search-wrap input:focus, .toolbar select:focus, .qty-input:focus, .count-input:focus, .remarks-input:focus { border-color: #77b6a0; box-shadow: 0 0 0 3px rgba(18,107,82,.09); }
-    .progress-wrap { display: flex; align-items: center; gap: 9px; margin-top: 10px; }
-    .progress-track { height: 8px; background: #eaf0ec; border-radius: 20px; flex: 1; overflow: hidden; }
-    .progress-fill { height: 100%; width: 0; background: var(--green); border-radius: 20px; transition: width .2s ease; }
-    .progress-text { color: var(--muted); font-size: 11px; font-weight: 800; white-space: nowrap; }
-    .note { color: #54645c; margin: 0 2px 10px; font-size: 11px; line-height: 1.45; }
-    .list-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 2px 8px; }
-    .list-heading strong { font-size: 13px; }
-    .list-heading span { color: var(--muted); font-size: 11px; }
-
-    .inventory-cards { display: grid; gap: 10px; }
-    .lens-card { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 15px; padding: 13px; box-shadow: var(--shadow); }
-    .lens-card.row-check { border-color: #b9ddca; background: #fbfefc; }
-    .lens-card.row-x { border-color: #efc6cc; background: #fffdfd; }
-    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-    .lens-type { color: var(--green-dark); font-size: 10px; line-height: 1.35; font-weight: 900; letter-spacing: .055em; text-transform: uppercase; margin-bottom: 4px; }
-    .lens-description { color: var(--ink); font-size: 15px; line-height: 1.35; font-weight: 800; overflow-wrap: anywhere; }
-    .lens-code { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 28px; padding: 4px 8px; border-radius: 8px; background: #f0f4f1; color: #425249; font-size: 11px; font-weight: 900; font-variant-numeric: tabular-nums; }
-    .quantity-grid { display: grid; grid-template-columns: 1fr; gap: 9px; }
-    .mismatch-panel { display: none; margin-top: 11px; padding: 11px; border: 1px solid #efc6cc; border-radius: 12px; background: #fff9f9; }
-    .lens-card.is-mismatch-open .mismatch-panel { display: block; }
-    .mismatch-grid { display: grid; grid-template-columns: 1fr; gap: 9px; }
-    .mismatch-heading { margin: 0 0 9px; color: var(--red); font-size: 11px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
-    .btn-save-x { width: 100%; min-height: 48px; margin-top: 10px; color: #fff; background: var(--red); }
-    .load-more-wrap { padding: 12px 0 4px; }
-    .btn-load-more { width: 100%; min-height: 48px; background: #fff; border: 1px solid var(--line); color: var(--green-dark); }
-    .field-label { display: block; margin: 0 0 5px 2px; color: #5b6a62; font-size: 10px; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
-    .qty-input, .count-input, .remarks-input { display: block; width: 100%; min-width: 0; min-height: 51px; padding: 0 11px; border: 1px solid #dce5df; border-radius: 10px; outline: none; background: #fff; color: var(--ink); font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
-    .qty-input { background: #f8faf8; }
-    .count-input { border-color: #b9d7c9; background: #fbfefc; }
-    .remarks-wrap { margin-top: 10px; }
-    .remarks-input { min-height: 46px; font-size: 14px; font-weight: 500; }
-    .remarks-help { color: var(--muted); font-size: 10px; margin: 4px 2px 0; }
-    .card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 11px; }
-    .status { display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 5px 8px; border-radius: 20px; font-size: 9px; font-weight: 900; letter-spacing: .035em; white-space: nowrap; }
-    .status-pending { background: #eef2ef; color: #68766e; }
-    .status-check { background: var(--green-soft); color: var(--green-dark); }
-    .status-x { background: var(--red-soft); color: var(--red); }
-    .status-dirty { background: var(--amber-soft); color: var(--amber); }
-    .checked-time { color: #87938c; font-size: 9px; margin-left: 5px; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-    .btn-check, .btn-x { min-height: 49px; font-size: 14px; border-radius: 11px; }
-    .btn-check { color: #fff; background: var(--green); }
-    .btn-x { color: var(--red); background: var(--red-soft); border: 1px solid #f2cbd0; }
-    .empty { text-align: center; padding: 42px 18px; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 14px; }
-    .empty strong { display: block; color: var(--ink); margin-bottom: 6px; font-size: 15px; }
-    .loading { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); padding: 42px 15px; font-size: 13px; }
-    .spinner { width: 17px; height: 17px; flex: 0 0 auto; border: 2px solid #dce7e0; border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .toast { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 10; max-width: 580px; margin: 0 auto; color: #fff; background: #26372f; padding: 14px 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 13px; line-height: 1.4; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .18s ease; }
-    .toast.show { opacity: 1; transform: translateY(0); }
-    .toast.error { background: #8e2634; }
-    .footer { color: #8a958e; text-align: center; padding: 14px 3px 0; font-size: 10px; line-height: 1.4; }
-
-    @media (max-width: 370px) {
-      .page { padding-left: 10px; padding-right: 10px; }
-      .topbar { gap: 6px; }
-      h1 { font-size: 23px; }
-      .top-actions button { padding: 0 9px; font-size: 11px; }
-      .stat { padding: 10px; }
-      .stat-value { font-size: 21px; }
-      .lens-card { padding: 11px; }
-    }
+    :root{color-scheme:light;--ink:#182522;--muted:#6d7b76;--bg:#f3f6f4;--card:#fff;--line:#e1e9e4;--green:#0b7654;--green2:#e5f5ed;--red:#ba3030;--red2:#fff0ef;--amber:#94620b;--amber2:#fff6df;--dark:#102c27;--shadow:0 5px 20px rgba(16,44,39,.07)}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:wait}.hidden{display:none!important}
+    .desktop-wall{display:none;min-height:100dvh;align-items:center;justify-content:center;padding:28px;text-align:center}.desktop-wall .wall-card{max-width:360px;background:#fff;border:1px solid var(--line);padding:28px;border-radius:24px;box-shadow:var(--shadow)}
+    .app{max-width:560px;min-height:100dvh;margin:0 auto;padding-bottom:30px}.top{background:var(--dark);color:#fff;padding:20px 18px 18px;border-radius:0 0 24px 24px}.top-row{display:flex;justify-content:space-between;align-items:center;gap:12px}.brand{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:#acd7c6;font-weight:800}.top h1{font-size:24px;line-height:1.15;margin:6px 0 0}.sub{font-size:12px;color:#c3d8d0;margin-top:5px}.signout{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:700}
+    .content{padding:14px 13px}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:-1px}.stat{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:12px 10px;box-shadow:0 2px 8px rgba(16,44,39,.03)}.stat .n{font-size:23px;font-weight:850;letter-spacing:-.04em;line-height:1.1}.stat .l{font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-top:5px}.stat.good .n{color:var(--green)}.stat.bad .n{color:var(--red)}
+    .progress-wrap{margin:13px 2px 15px}.progress-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px}.progress{height:8px;background:#e3ebe6;border-radius:20px;overflow:hidden}.progress>span{display:block;height:100%;width:0;background:var(--green);border-radius:20px;transition:width .2s}.sync-panel{display:grid;gap:6px;margin:0 0 13px}.sync-btn{height:49px;border:0;border-radius:13px;background:#0b7654;color:#fff;font-size:13px;font-weight:900;letter-spacing:.02em;box-shadow:0 3px 9px rgba(11,118,84,.14)}.sync-meta{font-size:10px;line-height:1.4;color:var(--muted);padding:0 3px}
+    .tools{display:grid;gap:8px;margin-bottom:12px}.search{width:100%;height:48px;border:1px solid var(--line);border-radius:14px;background:#fff;padding:0 14px;outline:none;font-size:15px}.search:focus,.field:focus{border-color:#6db79a;box-shadow:0 0 0 3px rgba(11,118,84,.1)}.filters{display:grid;grid-template-columns:1fr 1fr;gap:8px}.filter{height:42px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:0 10px;color:#33423c;font-size:12px;min-width:0}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:8px 1px 10px}.result-count{font-size:11px;color:var(--muted);font-weight:700}.reset{background:none;border:0;color:var(--red);font-size:11px;font-weight:800;padding:8px 3px}
+    .cards{display:grid;gap:10px}.lens-card{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:14px;box-shadow:0 2px 9px rgba(16,44,39,.035)}.card-head{display:flex;gap:9px;justify-content:space-between;align-items:flex-start}.lens-name{font-size:15px;line-height:1.25;font-weight:800;overflow-wrap:anywhere}.lens-type{font-size:10px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.055em;margin-bottom:5px}.code{font-size:10px;color:#829089;font-weight:700;white-space:nowrap;background:#f4f7f5;padding:5px 8px;border-radius:8px}.qty-row{display:flex;align-items:center;justify-content:space-between;background:#f7faf8;border-radius:12px;padding:9px 11px;margin:12px 0 10px}.qty-caption{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}.qty-value{display:flex;align-items:center;gap:8px}.qty-num{font-size:27px;font-weight:900;letter-spacing:-.04em;min-width:25px;text-align:right}.edit-qty{border:1px solid var(--line);background:#fff;border-radius:9px;color:#53625b;padding:6px 8px;font-size:10px;font-weight:800}.statusline{display:flex;align-items:center;gap:6px;margin:0 0 10px;font-size:11px;font-weight:800}.dot{width:7px;height:7px;border-radius:50%;background:#b7c1bb}.statusline.matched{color:var(--green)}.statusline.matched .dot{background:var(--green)}.statusline.mismatch{color:var(--red)}.statusline.mismatch .dot{background:var(--red)}.statusline.pending{color:#77837d}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.action{height:49px;border-radius:12px;border:0;font-size:15px;font-weight:900;letter-spacing:.02em}.action.check{background:var(--green);color:white}.action.mismatch{background:var(--red2);color:var(--red);border:1px solid #f3c9c5}.action small{font-size:10px;font-weight:700;display:block;opacity:.85;margin-top:2px;letter-spacing:0}.note{font-size:11px;color:var(--muted);background:#fafbfa;padding:8px 10px;border-radius:10px;margin-top:9px;line-height:1.4;overflow-wrap:anywhere}.load-more{width:100%;height:46px;background:#fff;border:1px solid var(--line);border-radius:13px;color:var(--green);font-weight:800;margin-top:11px}.empty{background:#fff;border:1px dashed #cbd8d0;border-radius:16px;text-align:center;padding:26px 16px;color:var(--muted);font-size:13px}
+    .screen{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:22px}.auth-card{width:100%;max-width:380px;background:#fff;border:1px solid var(--line);border-radius:23px;padding:24px;box-shadow:var(--shadow)}.auth-mark{width:48px;height:48px;display:grid;place-items:center;border-radius:15px;background:var(--green2);color:var(--green);font-weight:950;font-size:19px}.auth-card h2{margin:15px 0 5px;font-size:23px}.auth-card p{margin:0 0 18px;color:var(--muted);font-size:13px;line-height:1.5}.label{display:block;font-size:11px;font-weight:800;color:#4e5c56;margin:13px 0 6px}.field{width:100%;height:47px;border:1px solid var(--line);border-radius:12px;padding:0 12px;outline:none;background:#fff}.primary{width:100%;height:49px;border:0;border-radius:13px;background:var(--green);color:#fff;font-weight:900;margin-top:17px}.msg{font-size:12px;line-height:1.45;margin-top:12px;color:var(--muted)}.msg.error{color:var(--red)}.msg.success{color:var(--green)}
+    .modal-backdrop{position:fixed;inset:0;z-index:30;background:rgba(9,25,21,.48);display:flex;align-items:flex-end;justify-content:center;padding:12px}.modal{width:100%;max-width:520px;background:#fff;border-radius:22px 22px 18px 18px;padding:20px 17px calc(17px + env(safe-area-inset-bottom));box-shadow:0 -8px 40px rgba(0,0,0,.15)}.modal h3{font-size:19px;margin:0 0 6px}.modal .help{font-size:12px;line-height:1.45;color:var(--muted);margin-bottom:12px}.modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:15px}.secondary{height:47px;border-radius:12px;border:1px solid var(--line);background:#fff;color:#3f4c46;font-weight:800}.danger{height:47px;border:0;border-radius:12px;background:var(--red);color:#fff;font-weight:900}.toast{position:fixed;z-index:50;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#173b31;color:#fff;padding:12px 16px;border-radius:12px;box-shadow:var(--shadow);font-size:12px;font-weight:750;max-width:calc(100vw - 28px);text-align:center}.footer{text-align:center;color:#9aa7a0;font-size:10px;padding:18px 10px}
+    @media(min-width:760px){body{background:#e9efeb}.app,.screen{display:none!important}.desktop-wall{display:flex}}
   </style>
 </head>
 <body>
-  <section class="desktop-blocker" aria-live="polite">
-    <div class="desktop-card">
-      <div class="desktop-icon">📱</div>
-      <h1>Open on your phone</h1>
-      <p>HO Lens Inventory is set up for smartphone use. Open this same web app link in Chrome on an Android phone or Safari/Chrome on an iPhone.</p>
+  <div class="desktop-wall"><div class="wall-card"><div style="font-size:36px">📱</div><h2>Open on your phone</h2><p style="color:#6d7b76;font-size:14px;line-height:1.5">HO Lens Inventory is designed for phone-only stock checking. Open this GitHub Pages link on your Android or iPhone.</p></div></div>
+
+  <section id="authScreen" class="screen">
+    <div class="auth-card">
+      <div class="auth-mark">HO</div>
+      <h2>Lens Inventory</h2>
+      <p>Sign in to check lens stock. Stock quantities sync from the owner’s Google Sheet; inventory checks are saved in Supabase.</p>
+      <form id="loginForm">
+        <label class="label" for="email">Email address</label>
+        <input class="field" id="email" type="email" autocomplete="username" required placeholder="you@example.com">
+        <label class="label" for="password">Password</label>
+        <input class="field" id="password" type="password" autocomplete="current-password" required placeholder="Your password">
+        <button class="primary" id="loginBtn" type="submit">SIGN IN</button>
+      </form>
+      <div id="authMsg" class="msg">Your inventory account must first be created in Supabase Authentication by the project owner.</div>
     </div>
   </section>
 
-  <main class="page">
-    <header class="topbar">
-      <div>
-        <div class="eyebrow">Stock control · HO</div>
-        <h1>Lens Inventory</h1>
-        <div class="subhead">Check each lens against the stock quantity. Zero-quantity items are hidden.</div>
-      </div>
-      <div class="top-actions">
-        <button class="btn-secondary" id="refreshBtn" type="button">↻ Refresh</button>
-        <button class="btn-reset" id="newCountBtn" type="button">New count</button>
+  <main id="app" class="app hidden">
+    <header class="top">
+      <div class="top-row">
+        <div><div class="brand">HO · STOCK CONTROL</div><h1>Lens Inventory</h1><div class="sub" id="userLabel">Connected to Supabase</div></div>
+        <button class="signout" id="signOutBtn">SIGN OUT</button>
       </div>
     </header>
-
-    <section class="stats" aria-label="Inventory summary">
-      <div class="stat"><div class="stat-label">Active lenses</div><div class="stat-value" id="totalStat">—</div><div class="stat-foot">QTY above zero</div></div>
-      <div class="stat"><div class="stat-label">Pending</div><div class="stat-value" id="pendingStat">—</div><div class="stat-foot">Not checked yet</div></div>
-      <div class="stat"><div class="stat-label">Matched · CHECK</div><div class="stat-value" id="checkStat">—</div><div class="stat-foot">Count matches QTY</div></div>
-      <div class="stat"><div class="stat-label">Mismatch · X</div><div class="stat-value" id="xStat">—</div><div class="stat-foot">Remarks recorded</div></div>
-    </section>
-
-    <section class="toolbar" aria-label="Search and filters">
-      <div class="search-wrap"><input id="searchInput" type="search" placeholder="Search lens, description or code…" autocomplete="off"></div>
-      <div class="filters">
-        <select id="typeFilter" aria-label="Filter by lens type"><option value="">All lens types</option></select>
-        <select id="statusFilter" aria-label="Filter by check status">
-          <option value="ALL">All statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="CHECK">Matched · CHECK</option>
-          <option value="X">Mismatch · X</option>
-        </select>
-      </div>
-      <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><div class="progress-text" id="progressText">0% checked</div></div>
-    </section>
-
-    <p class="note">Check the lens physically. If it matches QTY, tap <b>CHECK</b>—no typing needed. Tap <b>X</b> only when it differs, then enter the actual count and a remark.</p>
-
-    <div class="list-heading"><strong>Lens list</strong><span id="visibleCount">Loading…</span></div>
-    <div id="loading" class="loading"><span class="spinner"></span> Loading lens inventory…</div>
-    <section id="inventoryCards" class="inventory-cards" aria-label="Lens inventory"></section>
-    <div class="load-more-wrap" id="loadMoreWrap" hidden><button class="btn-load-more" id="loadMoreBtn" type="button">Load more lenses</button></div>
-    <div class="empty" id="emptyState" hidden><strong>No lens records found</strong><span>Try clearing your search or filters.</span></div>
-    <div class="footer" id="footerText">Connected to HO LENS STOCKS</div>
+    <div class="content">
+      <section class="stats">
+        <div class="stat"><div class="n" id="totalStat">—</div><div class="l">Active lenses</div></div>
+        <div class="stat good"><div class="n" id="matchedStat">—</div><div class="l">Matched</div></div>
+        <div class="stat bad"><div class="n" id="mismatchStat">—</div><div class="l">Mismatch</div></div>
+      </section>
+      <div class="progress-wrap"><div class="progress-head"><span>INVENTORY PROGRESS</span><span id="progressLabel">0%</span></div><div class="progress"><span id="progressBar"></span></div></div>
+      <section class="sync-panel">
+        <button id="syncBtn" class="sync-btn" type="button">↻ SYNC ALL DATA FROM GOOGLE SHEET</button>
+        <div id="syncInfo" class="sync-meta">Google Sheet is the master stock list. Tap Sync after updating quantities in the sheet.</div>
+      </section>
+      <section class="tools">
+        <input id="search" class="search" type="search" placeholder="Search description, lens code or type…" autocomplete="off">
+        <div class="filters">
+          <select id="typeFilter" class="filter"><option value="">All lens types</option></select>
+          <select id="statusFilter" class="filter"><option value="">All statuses</option><option value="PENDING">Pending</option><option value="MATCHED">Matched</option><option value="MISMATCH">Mismatch</option></select>
+        </div>
+      </section>
+      <div class="toolbar"><div id="resultCount" class="result-count">Loading inventory…</div><button id="resetBtn" class="reset">RESET CHECKS</button></div>
+      <section id="cards" class="cards"><div class="empty">Connecting to Supabase…</div></section>
+      <button id="loadMore" class="load-more hidden">LOAD MORE LENSES</button>
+      <div class="footer">Stock list from Google Sheets · Checks saved in Supabase</div>
+    </div>
   </main>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">Record discrepancy</h3>
+      <div id="modalHelp" class="help"></div>
+      <form id="modalForm">
+        <div id="countWrap">
+          <label class="label" for="actualCount">Physical quantity counted</label>
+          <input class="field" id="actualCount" type="number" min="0" step="1" inputmode="numeric">
+        </div>
+        <div id="remarksWrap">
+          <label class="label" for="remarks">Remarks (required for mismatch)</label>
+          <textarea class="field" id="remarks" rows="3" style="height:auto;padding:11px;resize:vertical" placeholder="Example: 2 pcs missing, damaged, wrong location…"></textarea>
+        </div>
+        <div class="modal-actions"><button type="button" id="cancelModal" class="secondary">CANCEL</button><button type="submit" id="saveModal" class="danger">SAVE</button></div>
+      </form>
+    </section>
+  </div>
+  <div id="toast" class="toast hidden" role="status"></div>
 
   <script>
-    const PAGE_SIZE = 30;
-    const state = { records: [], busyRows: new Set(), displayLimit: PAGE_SIZE };
+    // Your existing Supabase project URL is prefilled. Paste the project's PUBLIC publishable key below.
+    // NEVER put a service_role / secret key in this browser file.
+    const SUPABASE_URL = 'https://zjuivpsvhuzceltszjut.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'PASTE_SUPABASE_PUBLISHABLE_KEY_HERE';
+    const TABLE = 'ho_lens_inventory';
+    const SYNC_FUNCTION = 'sync-ho-lens-from-google-sheet';
+    const ACCESS_TABLE = 'ho_lens_inventory_access';
+    const PAGE_SIZE = 24;
+    const { createClient } = window.supabase || {};
+
     const $ = (id) => document.getElementById(id);
+    const state = { client:null, user:null, rows:[], filtered:[], visible:PAGE_SIZE, saving:new Set(), modalMode:null, modalRow:null, channel:null, toastTimer:null };
 
-    function isPhoneDevice() {
-      const ua = navigator.userAgent || '';
-      const phoneUA = /iPhone|iPod|Android.*Mobile|Windows Phone|Mobile/i.test(ua);
-      const smallTouchDevice = window.matchMedia && window.matchMedia('(pointer: coarse)').matches && Math.min(window.screen.width, window.screen.height) <= 600;
-      return phoneUA || smallTouchDevice;
+    function esc(value){return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    function showToast(message){const el=$('toast');el.textContent=message;el.classList.remove('hidden');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.add('hidden'),2400);}
+    function setAuthMessage(message,kind=''){const el=$('authMsg');el.textContent=message;el.className='msg '+kind;}
+    function setBusy(button,busy,label){button.disabled=busy;if(busy)button.dataset.oldLabel=button.textContent;button.textContent=busy?label:(button.dataset.oldLabel||label);if(!busy)delete button.dataset.oldLabel;}
+    function activeRows(){return state.rows.filter(r=>r.is_active!==false && Number(r.qty)>0);}
+    function refreshStats(){
+      const active=activeRows(), matched=active.filter(r=>r.check_status==='MATCHED').length, mismatch=active.filter(r=>r.check_status==='MISMATCH').length, completed=matched+mismatch;
+      $('totalStat').textContent=active.length;$('matchedStat').textContent=matched;$('mismatchStat').textContent=mismatch;
+      const pct=active.length?Math.round(completed/active.length*100):0;$('progressLabel').textContent=pct+'%';$('progressBar').style.width=pct+'%';
     }
-
-    function escapeHtml(value) {
-      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      })[ch]);
+    function populateTypes(){const select=$('typeFilter'),previous=select.value;const types=[...new Set(activeRows().map(r=>r.lens_type))].sort((a,b)=>a.localeCompare(b));select.innerHTML='<option value="">All lens types</option>'+types.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');select.value=types.includes(previous)?previous:'';}
+    function getFiltered(){const q=$('search').value.trim().toLowerCase(),type=$('typeFilter').value,status=$('statusFilter').value;return activeRows().filter(r=>{
+      const text=[r.lens_type,r.description,r.lens_code].join(' ').toLowerCase();return (!q||text.includes(q))&&(!type||r.lens_type===type)&&(!status||r.check_status===status);
+    });}
+    function cardHTML(r){
+      const status=r.check_status||'PENDING',label=status==='MATCHED'?'MATCHED':status==='MISMATCH'?'MISMATCH · CHECK REMARKS':'NOT CHECKED';
+      const mismatchNote=status==='MISMATCH'?`<div class="note">Counted: <b>${esc(r.qty_counted)}</b> · Expected: <b>${esc(r.qty)}</b><br>${esc(r.remarks||'')}</div>`:'';
+      const matchedNote=status==='MATCHED'?`<div class="note">Count confirmed: ${esc(r.qty_counted)}${r.checked_at?' · '+esc(new Date(r.checked_at).toLocaleString()):''}</div>`:'';
+      const busy=state.saving.has(String(r.id));
+      return `<article class="lens-card" data-id="${esc(r.id)}">
+        <div class="card-head"><div><div class="lens-type">${esc(r.lens_type)}</div><div class="lens-name">${esc(r.description)}</div></div><div class="code">CODE ${esc(r.lens_code)}</div></div>
+        <div class="qty-row"><div><div class="qty-caption">Recorded QTY · FROM GOOGLE SHEET</div><div style="font-size:10px;color:#8b9891;margin-top:2px">Update stock in Google Sheets, then tap Sync</div></div><div class="qty-value"><div class="qty-num">${esc(r.qty)}</div></div></div>
+        <div class="statusline ${status==='MATCHED'?'matched':status==='MISMATCH'?'mismatch':'pending'}"><span class="dot"></span>${label}</div>
+        <div class="actions"><button class="action check" data-action="match" data-id="${esc(r.id)}" ${busy?'disabled':''}>✓ CHECK<small>Count matches QTY</small></button><button class="action mismatch" data-action="mismatch" data-id="${esc(r.id)}" ${busy?'disabled':''}>✕ X<small>Record difference</small></button></div>
+        ${mismatchNote}${matchedNote}
+      </article>`;
     }
-
-    function showToast(message, isError) {
-      const toast = $('toast');
-      toast.textContent = message;
-      toast.className = 'toast show' + (isError ? ' error' : '');
-      clearTimeout(showToast.timer);
-      showToast.timer = setTimeout(() => { toast.className = 'toast'; }, 3500);
+    function render(){
+      refreshStats();const found=getFiltered();state.filtered=found;const visible=found.slice(0,state.visible);
+      $('resultCount').textContent=`Showing ${visible.length} of ${found.length} lenses`;
+      $('cards').innerHTML=visible.length?visible.map(cardHTML).join(''):'<div class="empty">No active lenses found. Check your search or filters.</div>';
+      $('loadMore').classList.toggle('hidden',found.length<=visible.length);
+      $('loadMore').textContent=`LOAD MORE (${Math.min(PAGE_SIZE,found.length-visible.length)})`;
     }
-
-    function loadInventory() {
-      $('loading').hidden = false;
-      $('inventoryCards').hidden = true;
-      $('emptyState').hidden = true;
-      $('visibleCount').textContent = 'Loading…';
-      $('refreshBtn').disabled = true;
-      google.script.run
-        .withSuccessHandler(data => {
-          state.records = (data && data.records) || [];
-          state.displayLimit = PAGE_SIZE;
-          buildTypeFilter();
-          updateSummary();
-          renderRows();
-          $('loading').hidden = true;
-          $('refreshBtn').disabled = false;
-          $('footerText').textContent = 'Loaded ' + state.records.length + ' active lens records · ' + ((data && data.excludedZero) || 0) + ' zero-quantity rows excluded';
-        })
-        .withFailureHandler(error => {
-          $('loading').innerHTML = '<b>Unable to load inventory.</b> ' + escapeHtml(error && error.message ? error.message : error);
-          $('refreshBtn').disabled = false;
-          showToast(error && error.message ? error.message : 'Unable to load inventory.', true);
-        })
-        .getInventoryData();
+    async function loadInventory(){
+      $('cards').innerHTML='<div class="empty">Loading lens records…</div>';
+      const {data,error}=await state.client.from(TABLE).select('id,lens_type,description,lens_code,qty,qty_counted,remarks,check_status,checked_at,updated_at,is_active').eq('is_active',true).gt('qty',0).order('lens_type').order('description').limit(2000);
+      if(error)throw error;
+      state.rows=data||[];state.visible=PAGE_SIZE;populateTypes();render();
+      if(!state.rows.length) $('cards').innerHTML='<div class="empty">No active lens quantities yet. Tap SYNC FROM GOOGLE SHEET. All 0-QTY rows remain saved and will appear automatically when their Google Sheet quantity becomes positive.</div>';
+      subscribeRealtime();
     }
-
-    function buildTypeFilter() {
-      const select = $('typeFilter');
-      const previous = select.value;
-      const types = [...new Set(state.records.map(r => r.type).filter(Boolean))].sort((a,b) => a.localeCompare(b));
-      select.innerHTML = '<option value="">All lens types</option>' + types.map(type => '<option value="' + escapeHtml(type) + '">' + escapeHtml(type) + '</option>').join('');
-      if (types.includes(previous)) select.value = previous;
+    async function verifyAccess(user){
+      const {data,error}=await state.client.from(ACCESS_TABLE).select('user_id').eq('user_id',user.id).maybeSingle();
+      if(error)throw error;
+      return !!data;
     }
-
-    function updateSummary() {
-      const total = state.records.length;
-      const checked = state.records.filter(r => !r.dirty && r.status === 'CHECK').length;
-      const mismatched = state.records.filter(r => !r.dirty && r.status === 'X').length;
-      const pending = total - checked - mismatched;
-      const pct = total ? Math.round(((checked + mismatched) / total) * 100) : 0;
-      $('totalStat').textContent = total.toLocaleString();
-      $('pendingStat').textContent = pending.toLocaleString();
-      $('checkStat').textContent = checked.toLocaleString();
-      $('xStat').textContent = mismatched.toLocaleString();
-      $('progressFill').style.width = pct + '%';
-      $('progressText').textContent = pct + '% checked';
-    }
-
-    function getFilteredRecords() {
-      const query = $('searchInput').value.trim().toLowerCase();
-      const type = $('typeFilter').value;
-      const status = $('statusFilter').value;
-      return state.records.filter(r => {
-        const matchesQuery = !query || [r.type, r.description, r.code].some(v => String(v).toLowerCase().includes(query));
-        const matchesType = !type || r.type === type;
-        const effectiveStatus = r.dirty ? 'PENDING' : (r.status || 'PENDING');
-        const matchesStatus = status === 'ALL' || effectiveStatus === status;
-        return matchesQuery && matchesType && matchesStatus;
-      });
-    }
-
-    function statusHtml(record) {
-      if (record.dirty) return '<span class="status status-dirty">● UNSAVED CHANGES</span>';
-      if (record.status === 'CHECK') return '<span class="status status-check">✓ CHECKED</span>';
-      if (record.status === 'X') return '<span class="status status-x">✕ MISMATCH</span>';
-      return '<span class="status status-pending">PENDING</span>';
-    }
-
-    function renderRows() {
-      const filtered = getFilteredRecords();
-      const records = filtered.slice(0, state.displayLimit);
-      const cards = $('inventoryCards');
-      $('visibleCount').textContent = records.length + ' of ' + filtered.length + ' matching · ' + state.records.length + ' total';
-      cards.hidden = records.length === 0;
-      $('emptyState').hidden = records.length !== 0;
-      $('loadMoreWrap').hidden = records.length >= filtered.length;
-      $('loadMoreBtn').textContent = 'Load next ' + Math.min(PAGE_SIZE, filtered.length - records.length) + ' lenses';
-      cards.innerHTML = records.map(r => {
-        const rowKey = String(r.rowNumber);
-        const cardClass = (r.dirty ? '' : (r.status === 'CHECK' ? 'row-check' : (r.status === 'X' ? 'row-x' : ''))) + (r.status === 'X' ? ' is-mismatch-open' : '');
-        const disabled = state.busyRows.has(rowKey) ? 'disabled' : '';
-        return '<article class="lens-card ' + cardClass + '" data-row="' + rowKey + '">' +
-          '<div class="card-head"><div><div class="lens-type">' + escapeHtml(r.type) + '</div><div class="lens-description">' + escapeHtml(r.description) + '</div></div><span class="lens-code">' + escapeHtml(r.code) + '</span></div>' +
-          '<div class="quantity-grid">' +
-            '<label><span class="field-label">QTY · EDITABLE</span><input class="qty-input" type="number" min="0" step="1" inputmode="numeric" aria-label="Recorded quantity" data-field="qty" data-row="' + rowKey + '" value="' + escapeHtml(r.qty) + '"></label>' +
-          '</div>' +
-          '<div class="card-footer"><div class="status-cell">' + statusHtml(r) + (r.checkedAt && !r.dirty ? '<span class="checked-time">' + escapeHtml(r.checkedAt) + '</span>' : '') + '</div></div>' +
-          '<div class="actions"><button class="btn-check" type="button" data-action="CHECK" data-row="' + rowKey + '" ' + disabled + '>✓ CHECK · MATCH</button><button class="btn-x" type="button" data-action="OPEN_X" data-row="' + rowKey + '" ' + disabled + '>✕ X · MISMATCH</button></div>' +
-          '<div class="mismatch-panel"><div class="mismatch-heading">Record the difference</div>' +
-            '<div class="mismatch-grid">' +
-              '<label><span class="field-label">ACTUAL PHYSICAL COUNT</span><input class="count-input" type="number" min="0" step="1" inputmode="numeric" aria-label="Actual physical counted quantity" data-field="counted" data-row="' + rowKey + '" value="' + (r.counted === null ? '' : escapeHtml(r.counted)) + '" placeholder="Enter actual count"></label>' +
-              '<label><span class="field-label">REMARKS · REQUIRED</span><input class="remarks-input" type="text" maxlength="250" aria-label="Mismatch remarks" data-field="remarks" data-row="' + rowKey + '" value="' + escapeHtml(r.remarks) + '" placeholder="Missing, damaged, wrong item…"></label>' +
-            '</div><button class="btn-save-x" type="button" data-action="X" data-row="' + rowKey + '" ' + disabled + '>SAVE MISMATCH</button>' +
-          '</div>' +
-        '</article>';
-      }).join('');
-    }
-
-    function updateRecordFromInput(input) {
-      const rowNumber = Number(input.dataset.row);
-      const record = state.records.find(r => r.rowNumber === rowNumber);
-      if (!record) return;
-      const field = input.dataset.field;
-      if (field === 'qty' || field === 'counted') {
-        record[field] = input.value.trim() === '' ? null : Number(input.value);
-      } else if (field === 'remarks') {
-        record.remarks = input.value;
-      }
-      record.dirty = true;
-      const card = input.closest('.lens-card');
-      if (card) {
-        card.classList.remove('row-check', 'row-x');
-        const statusCell = card.querySelector('.status-cell');
-        if (statusCell) statusCell.innerHTML = statusHtml(record);
-      }
-      updateSummary();
-    }
-
-    function handleAction(button) {
-      const rowNumber = Number(button.dataset.row);
-      const record = state.records.find(r => r.rowNumber === rowNumber);
-      if (!record || state.busyRows.has(String(rowNumber))) return;
-
-      const card = button.closest('.lens-card');
-      const action = button.dataset.action;
-
-      if (action === 'OPEN_X') {
-        card.classList.add('is-mismatch-open');
-        const countInput = card.querySelector('[data-field="counted"]');
-        if (countInput) countInput.focus();
-        return;
-      }
-
-      const qtyValue = card.querySelector('[data-field="qty"]').value.trim();
-      if (qtyValue === '' || !Number.isInteger(Number(qtyValue)) || Number(qtyValue) < 0) {
-        showToast('QTY must be a whole number equal to or greater than zero.', true); return;
-      }
-      const qty = Number(qtyValue);
-      let counted = qty;
-      let remarks = '';
-
-      if (action === 'X') {
-        const countedValue = card.querySelector('[data-field="counted"]').value.trim();
-        remarks = card.querySelector('[data-field="remarks"]').value.trim();
-        if (countedValue === '' || !Number.isInteger(Number(countedValue)) || Number(countedValue) < 0) {
-          showToast('Enter the actual physical count for a mismatch.', true);
-          card.querySelector('[data-field="counted"]').focus(); return;
+    async function showApp(user){
+      try{
+        const ok=await verifyAccess(user);
+        if(!ok){
+          $('app').classList.add('hidden');$('authScreen').classList.remove('hidden');
+          setAuthMessage('This account is signed in but is not approved for HO Lens Inventory yet. Ask the project owner to add it to ho_lens_inventory_access.','error');
+          return;
         }
-        counted = Number(countedValue);
-        if (qty === counted) {
-          showToast('The quantities match. Tap CHECK instead.', true); return;
-        }
-        if (!remarks) {
-          showToast('Add a remark before saving a mismatch.', true);
-          card.querySelector('[data-field="remarks"]').focus(); return;
-        }
+        state.user=user;$('authScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=user.email||'Signed in';
+        await loadInventory();
+      }catch(err){
+        $('app').classList.add('hidden');$('authScreen').classList.remove('hidden');
+        setAuthMessage('Could not open inventory: '+(err.message||err),'error');
       }
-
-      if (action !== 'CHECK' && action !== 'X') return;
-      state.busyRows.add(String(rowNumber));
-      card.querySelectorAll('button').forEach(b => b.disabled = true);
-      google.script.run
-        .withSuccessHandler(result => {
-          state.busyRows.delete(String(rowNumber));
-          if (result.removedFromActiveList) {
-            state.records = state.records.filter(r => r.rowNumber !== rowNumber);
-          } else {
-            record.qty = result.qty;
-            record.counted = result.counted;
-            record.remarks = result.remarks;
-            record.status = result.status;
-            record.checkedAt = result.checkedAt;
-            record.dirty = false;
-          }
-          updateSummary();
-          renderRows();
-          showToast(action === 'CHECK' ? 'Saved: marked as matched.' : 'Saved: mismatch and remark recorded.');
-        })
-        .withFailureHandler(error => {
-          state.busyRows.delete(String(rowNumber));
-          card.querySelectorAll('button').forEach(b => b.disabled = false);
-          showToast(error && error.message ? error.message : 'Could not save this row.', true);
-        })
-        .recordInventoryAction({ rowNumber: rowNumber, qty: qty, counted: action === 'X' ? counted : null, remarks: remarks, action: action });
+    }
+    function subscribeRealtime(){
+      if(state.channel)state.client.removeChannel(state.channel);
+      state.channel=state.client.channel('ho-lens-inventory-live').on('postgres_changes',{event:'*',schema:'public',table:TABLE},payload=>{
+        const updated=payload.new||payload.old;if(!updated)return;const i=state.rows.findIndex(r=>String(r.id)===String(updated.id));
+        if(payload.eventType==='DELETE'){if(i>=0)state.rows.splice(i,1);}
+        else if(updated.is_active!==false && Number(updated.qty)>0){if(i>=0)state.rows[i]={...state.rows[i],...updated};else state.rows.push(updated);}
+        else if(i>=0){state.rows.splice(i,1);}
+        state.rows.sort((a,b)=>String(a.lens_type).localeCompare(String(b.lens_type))||String(a.description).localeCompare(String(b.description)));populateTypes();render();
+      }).subscribe();
+    }
+    async function savePatch(row,patch,success){
+      const id=String(row.id),original={...row};const i=state.rows.findIndex(r=>String(r.id)===id);if(i<0)return;
+      state.saving.add(id);state.rows[i]={...row,...patch};render();
+      const card=$(`cards`).querySelector(`[data-id="${CSS.escape(id)}"]`);if(card)card.style.opacity='.65';
+      const {data,error}=await state.client.from(TABLE).update(patch).eq('id',row.id).select('id,lens_type,description,lens_code,qty,qty_counted,remarks,check_status,checked_at,updated_at').single();
+      state.saving.delete(id);
+      if(error){state.rows[i]=original;render();showToast('Save failed: '+error.message);return false;}
+      state.rows[i]=data;render();showToast(success);return true;
+    }
+    async function matchRow(id){
+      const row=state.rows.find(r=>String(r.id)===String(id));if(!row||state.saving.has(String(id)))return;
+      await savePatch(row,{qty_counted:Number(row.qty),check_status:'MATCHED',remarks:null,checked_at:new Date().toISOString()},'Marked as matched.');
+    }
+    function openModal(row){
+      state.modalMode='mismatch';state.modalRow=row;$('modalBackdrop').classList.remove('hidden');$('remarks').value='';
+      $('modalTitle').textContent='Record mismatch';$('modalHelp').textContent=`${row.lens_type} · ${row.description} · Code ${row.lens_code}. Expected QTY from Google Sheet: ${row.qty}. Enter the physical count and explain the difference.`;
+      $('countWrap').classList.remove('hidden');$('remarksWrap').classList.remove('hidden');$('actualCount').value='';$('actualCount').placeholder='Actual count';$('saveModal').textContent='SAVE X';$('saveModal').className='danger';
+      setTimeout(()=>$('actualCount').focus(),80);
+    }
+    function closeModal(){$('modalBackdrop').classList.add('hidden');state.modalMode=null;state.modalRow=null;}
+    async function submitModal(event){
+      event.preventDefault();const row=state.modalRow;if(!row)return;const v=$('actualCount').value;if(v.trim()===''||!Number.isInteger(Number(v))||Number(v)<0){showToast('Enter a valid whole number.');return;}
+      const count=Number(v);const remarks=$('remarks').value.trim();if(count===Number(row.qty)){showToast('This count matches. Use the green CHECK button.');return;}if(!remarks){showToast('Remarks are required for a mismatch.');return;}
+      const btn=$('saveModal');setBusy(btn,true,'SAVING…');
+      try{const ok=await savePatch(row,{qty_counted:count,check_status:'MISMATCH',remarks,checked_at:new Date().toISOString()},'Mismatch saved with remarks.');if(ok)closeModal();}
+      finally{setBusy(btn,false,'SAVE X');btn.textContent='SAVE X';}
+    }
+    async function syncFromGoogleSheet(){
+      const btn=$('syncBtn');setBusy(btn,true,'SYNCING GOOGLE SHEET…');$('syncInfo').textContent='Connecting securely to Google Sheets…';
+      try{
+        const {data,error}=await state.client.functions.invoke(SYNC_FUNCTION,{method:'POST',body:{}});
+        if(error)throw error;
+        const result=data||{};
+        await loadInventory();
+        const when=result.synced_at?new Date(result.synced_at).toLocaleString():new Date().toLocaleString();
+        $('syncInfo').textContent=`Last sync: ${when} · ${result.source_rows??result.synced_rows??'—'} sheet rows · ${result.active_rows??'—'} active · ${result.zero_qty_rows??'—'} with QTY 0`;
+        showToast(`Google Sheet synced: ${result.source_rows??result.synced_rows??'All'} rows. Active lenses: ${result.active_rows??state.rows.length}.`);
+      }catch(err){
+        const message=err?.message||String(err);$('syncInfo').textContent='Sync failed. Check Google Sheets API access and Supabase Function secrets.';showToast('Google Sheet sync failed: '+message);
+      }finally{setBusy(btn,false,'↻ SYNC ALL DATA FROM GOOGLE SHEET');}
     }
 
-    $('inventoryCards').addEventListener('input', event => {
-      if (event.target && event.target.dataset && event.target.dataset.field) updateRecordFromInput(event.target);
-    });
-    $('inventoryCards').addEventListener('click', event => {
-      const button = event.target.closest('button[data-action]');
-      if (button) handleAction(button);
-    });
-    $('searchInput').addEventListener('input', () => { state.displayLimit = PAGE_SIZE; renderRows(); });
-    $('typeFilter').addEventListener('change', () => { state.displayLimit = PAGE_SIZE; renderRows(); });
-    $('statusFilter').addEventListener('change', () => { state.displayLimit = PAGE_SIZE; renderRows(); });
-    $('loadMoreBtn').addEventListener('click', () => { state.displayLimit += PAGE_SIZE; renderRows(); });
-    $('refreshBtn').addEventListener('click', loadInventory);
-    $('newCountBtn').addEventListener('click', () => {
-      const confirmed = confirm('Start a new inventory count?\n\nPrevious counted quantities, remarks and CHECK/X results will be copied to the HO LENS HISTORY tab first. Then the current count fields will be cleared. Your QTY values will not change.');
-      if (!confirmed) return;
-      $('newCountBtn').disabled = true;
-      google.script.run
-        .withSuccessHandler(result => {
-          $('newCountBtn').disabled = false;
-          showToast('New count started. Archived ' + result.archived + ' previous result(s).');
-          loadInventory();
-        })
-        .withFailureHandler(error => {
-          $('newCountBtn').disabled = false;
-          showToast(error && error.message ? error.message : 'Could not start a new count.', true);
-        })
-        .startNewInventory();
-    });
-
-    window.addEventListener('beforeunload', event => {
-      if (state.records.some(r => r.dirty)) {
-        event.preventDefault();
-        event.returnValue = '';
-      }
-    });
-
-    if (isPhoneDevice()) {
-      document.documentElement.classList.add('phone-mode');
-      loadInventory();
+    async function resetChecks(){
+      const yes=confirm('Reset all lens checks? This clears MATCHED/MISMATCH status, counted quantities and remarks for every lens. Recorded QTY will remain unchanged.');if(!yes)return;
+      const btn=$('resetBtn');btn.disabled=true;btn.textContent='RESETTING…';
+      const {error}=await state.client.from(TABLE).update({qty_counted:null,remarks:null,check_status:'PENDING',checked_at:null}).gte('id',1);
+      btn.disabled=false;btn.textContent='RESET CHECKS';if(error){showToast('Reset failed: '+error.message);return;}
+      state.rows=state.rows.map(r=>({...r,qty_counted:null,remarks:null,check_status:'PENDING',checked_at:null}));render();showToast('All checks reset.');
     }
+    async function start(){
+      if(!SUPABASE_PUBLISHABLE_KEY||SUPABASE_PUBLISHABLE_KEY.includes('PASTE_')){setAuthMessage('Setup needed: paste your Supabase publishable key into index.html, then reload. Do not use a service_role key.','error');$('loginBtn').disabled=true;return;}
+      if(!window.supabase||!createClient){setAuthMessage('Supabase client library did not load. Check your internet connection.','error');return;}
+      state.client=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+      const {data:{session},error}=await state.client.auth.getSession();if(error){setAuthMessage(error.message,'error');return;}
+      if(session){await showApp(session.user);return;}
+      $('authScreen').classList.remove('hidden');$('app').classList.add('hidden');
+    }
+
+    $('loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('loginBtn');setBusy(btn,true,'SIGNING IN…');setAuthMessage('Checking your account…');
+      const {data,error}=await state.client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});setBusy(btn,false,'SIGN IN');
+      if(error){setAuthMessage(error.message,'error');return;}
+      try{const ok=await verifyAccess(data.user);if(!ok){setAuthMessage('Your account is not approved yet. Ask the inventory owner to add your user ID in Supabase.','error');return;}await showApp(data.user);}catch(err){setAuthMessage(err.message,'error');}
+    });
+    $('signOutBtn').addEventListener('click',async()=>{if(state.channel)await state.client.removeChannel(state.channel);await state.client.auth.signOut();state.channel=null;state.rows=[];$('app').classList.add('hidden');$('authScreen').classList.remove('hidden');setAuthMessage('You have signed out.','success');});
+    $('search').addEventListener('input',()=>{state.visible=PAGE_SIZE;render();});$('typeFilter').addEventListener('change',()=>{state.visible=PAGE_SIZE;render();});$('statusFilter').addEventListener('change',()=>{state.visible=PAGE_SIZE;render();});
+    $('loadMore').addEventListener('click',()=>{state.visible+=PAGE_SIZE;render();});$('syncBtn').addEventListener('click',syncFromGoogleSheet);$('resetBtn').addEventListener('click',resetChecks);$('cancelModal').addEventListener('click',closeModal);$('modalForm').addEventListener('submit',submitModal);
+    $('modalBackdrop').addEventListener('click',e=>{if(e.target===$('modalBackdrop'))closeModal();});
+    $('cards').addEventListener('click',e=>{const btn=e.target.closest('[data-action]');if(!btn)return;const row=state.rows.find(r=>String(r.id)===btn.dataset.id);if(!row)return;
+      if(btn.dataset.action==='match')matchRow(row.id);if(btn.dataset.action==='mismatch')openModal(row);
+    });
+    start();
   </script>
 </body>
 </html>
