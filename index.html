@@ -253,7 +253,12 @@
         await ensureInventoryAccess(session.user);
         await showApp(session.user);
       }catch(err){
-        setBootError(err?.message || String(err));
+        const message=err?.message || String(err);
+        if(/Gmail OTP verification is required|VillFam supports email registration only/i.test(message)){
+          setBootError('The existing VillFam Gmail OTP trigger is still blocking the inventory phone session. Run 05_ALLOW_ANONYMOUS_INVENTORY_AND_PROTECT_VILLFAM.sql in Supabase, then reload this page.');
+        }else{
+          setBootError(message);
+        }
       }
     }
 
