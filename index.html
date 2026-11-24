@@ -365,7 +365,7 @@
       const firstDataRow=5;
       rows.forEach((r,i)=>{
         const row=ws.getRow(firstDataRow+i);
-        row.values=[null,r.lens_type??'',r.description??'',r.lens_code??'',Number(r.qty)||0];
+        row.values=[r.lens_type??'',r.description??'',r.lens_code??'',Number(r.qty)||0];
         row.height=20;
         row.eachCell({includeEmpty:true},cell=>{
           cell.font={name:'Aptos',size:10,color:{argb:'FF1C2A25'}};
