@@ -29,7 +29,7 @@
     <div class="boot-card">
       <div class="auth-mark">HO</div>
       <h2>Preparing Lens Inventory</h2>
-      <p id="bootMessage">Connecting securely. No email or password is required.</p>
+      <p id="bootMessage">Connecting to the public HO Lens Inventory database…</p>
       <div class="boot-spinner" aria-hidden="true"></div>
     </div>
   </section>
@@ -37,7 +37,7 @@
   <main id="app" class="app hidden">
     <header class="top">
       <div class="top-row">
-        <div><div class="brand">HO · STOCK CONTROL</div><h1>Lens Inventory</h1><div class="sub" id="userLabel">Ready · no password required</div></div>
+        <div><div class="brand">HO · STOCK CONTROL</div><h1>Lens Inventory</h1><div class="sub" id="userLabel">Live inventory · no account required</div></div>
       </div>
     </header>
     <div class="content">
@@ -86,17 +86,17 @@
 
   <script>
     // Your existing Supabase project URL is prefilled. Paste the project's PUBLIC publishable key below.
+    // This is a public, no-login app. Anyone with the app URL can read inventory and record checks.
     // NEVER put a service_role / secret key in this browser file.
     const SUPABASE_URL = 'https://zjuivpsvhuzceltszjut.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_SA_OZCUkyHiWR6O7CwYYhQ_DpP9m3ah';
     const TABLE = 'ho_lens_inventory';
     const SYNC_FUNCTION = 'sync-ho-lens-from-google-sheet';
-    const ACCESS_TABLE = 'ho_lens_inventory_access';
     const PAGE_SIZE = 24;
     const { createClient } = window.supabase || {};
 
     const $ = (id) => document.getElementById(id);
-    const state = { client:null, user:null, rows:[], filtered:[], visible:PAGE_SIZE, saving:new Set(), modalMode:null, modalRow:null, channel:null, toastTimer:null };
+    const state = { client:null, rows:[], filtered:[], visible:PAGE_SIZE, saving:new Set(), modalMode:null, modalRow:null, channel:null, toastTimer:null };
 
     function esc(value){return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function showToast(message){const el=$('toast');el.textContent=message;el.classList.remove('hidden');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.add('hidden'),2400);}
@@ -140,23 +140,15 @@
       if(!state.rows.length) $('cards').innerHTML='<div class="empty">No active lens quantities yet. Tap SYNC FROM GOOGLE SHEET. All 0-QTY rows remain saved and will appear automatically when their Google Sheet quantity becomes positive.</div>';
       subscribeRealtime();
     }
-    async function ensureInventoryAccess(user){
-      // A background anonymous identity is stored separately from VillFam Auth.
-      // RLS permits an anonymous user to register only its own user ID.
-      const {error:insertError}=await state.client.from(ACCESS_TABLE).insert({user_id:user.id});
-      if(insertError && insertError.code!=='23505') throw insertError;
-      const {data,error}=await state.client.from(ACCESS_TABLE).select('user_id').eq('user_id',user.id).maybeSingle();
-      if(error) throw error;
-      if(!data) throw new Error('This phone could not be enabled for inventory. Run 04_ENABLE_ANONYMOUS_ACCESS.sql in Supabase.');
-    }
-    async function showApp(user){
-      state.user=user;
-      // Load first so any database/RLS error remains visible on the boot screen.
+    async function showApp(){
+      // This app intentionally uses the Supabase anon role only. No Auth session
+      // is created, persisted, or shared with VillFam.
       await loadInventory();
       $('bootScreen').classList.add('hidden');
       $('app').classList.remove('hidden');
-      $('userLabel').textContent='Phone connected · no password required';
+      $('userLabel').textContent='Live inventory · no account required';
     }
+
     function subscribeRealtime(){
       if(state.channel)state.client.removeChannel(state.channel);
       state.channel=state.client.channel('ho-lens-inventory-live').on('postgres_changes',{event:'*',schema:'public',table:TABLE},payload=>{
@@ -195,7 +187,7 @@
       finally{setBusy(btn,false,'SAVE X');btn.textContent='SAVE X';}
     }
     async function syncFromGoogleSheet(){
-      const btn=$('syncBtn');setBusy(btn,true,'SYNCING GOOGLE SHEET…');$('syncInfo').textContent='Connecting securely to Google Sheets…';
+      const btn=$('syncBtn');setBusy(btn,true,'SYNCING GOOGLE SHEET…');$('syncInfo').textContent='Requesting a fresh copy of the Google Sheet…';
       try{
         const {data,error}=await state.client.functions.invoke(SYNC_FUNCTION,{method:'POST',body:{}});
         if(error)throw error;
@@ -205,7 +197,7 @@
         $('syncInfo').textContent=`Last sync: ${when} · ${result.source_rows??result.synced_rows??'—'} sheet rows · ${result.active_rows??'—'} active · ${result.zero_qty_rows??'—'} with QTY 0`;
         showToast(`Google Sheet synced: ${result.source_rows??result.synced_rows??'All'} rows. Active lenses: ${result.active_rows??state.rows.length}.`);
       }catch(err){
-        const message=err?.message||String(err);$('syncInfo').textContent='Sync failed. Check Google Sheets API access and Supabase Function secrets.';showToast('Google Sheet sync failed: '+message);
+        const message=err?.message||String(err);$('syncInfo').textContent='Sync failed. Check the Google Sheets sharing and Supabase Function secrets.';showToast('Google Sheet sync failed: '+message);
       }finally{setBusy(btn,false,'↻ SYNC ALL DATA FROM GOOGLE SHEET');}
     }
 
@@ -226,39 +218,15 @@
         return;
       }
       try{
+        // Disable browser session persistence entirely: this app uses role `anon`.
         state.client=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{
-          auth:{
-            persistSession:true,
-            autoRefreshToken:true,
-            detectSessionInUrl:false,
-            // Dedicated browser storage prevents this app from changing VillFam sessions.
-            storageKey:'ho-lens-inventory-anonymous-auth'
-          }
+          auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}
         });
-        let {data:{session},error:sessionError}=await state.client.auth.getSession();
-        if(sessionError) throw sessionError;
-        if(!session){
-          $('bootMessage').textContent='Creating a secure phone session…';
-          const {data,error}=await state.client.auth.signInAnonymously();
-          if(error){
-            if(/anonymous.*disabled|anonymous.*not enabled/i.test(error.message||'')){
-              throw new Error('Anonymous Sign-Ins are not enabled. In Supabase, open Authentication → Sign In / Providers (or Auth Providers) → enable Anonymous Sign-Ins, then reload this app.');
-            }
-            throw error;
-          }
-          session=data.session;
-        }
-        if(!session?.user) throw new Error('Supabase did not create a phone session. Reload and try again.');
         $('bootMessage').textContent='Opening lens inventory…';
-        await ensureInventoryAccess(session.user);
-        await showApp(session.user);
+        await showApp();
       }catch(err){
         const message=err?.message || String(err);
-        if(/Gmail OTP verification is required|VillFam supports email registration only/i.test(message)){
-          setBootError('The existing VillFam Gmail OTP trigger is still blocking the inventory phone session. Run 05_ALLOW_ANONYMOUS_INVENTORY_AND_PROTECT_VILLFAM.sql in Supabase, then reload this page.');
-        }else{
-          setBootError(message);
-        }
+        setBootError(message);
       }
     }
 
