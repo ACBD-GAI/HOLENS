@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<!-- Spreadsheet connection is configured in Code.gs. This page uses google.script.run; do not put the spreadsheet ID or credentials in browser-side JavaScript. -->
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HO Lens Inventory</title>
+  <style>
+    :root {
+      --ink: #17211d;
+      --muted: #66736d;
+      --line: #e2e9e5;
+      --panel: #ffffff;
+      --canvas: #f4f7f5;
+      --green: #126b52;
+      --green-dark: #0e5742;
+      --green-soft: #e6f4ee;
+      --red: #b42336;
+      --red-soft: #fff0f1;
+      --amber: #95620b;
+      --amber-soft: #fff6df;
+      --shadow: 0 8px 28px rgba(22, 48, 37, .07);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .page { max-width: 1500px; margin: 0 auto; padding: 26px 28px 50px; }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 18px; margin-bottom: 22px;
+    }
+    .eyebrow { color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 7px 0 7px; font-size: clamp(26px, 3vw, 36px); letter-spacing: -.04em; }
+    .subhead { color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .top-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+    button {
+      border: 0; border-radius: 9px; font-weight: 800; cursor: pointer;
+      transition: transform .12s ease, filter .12s ease, opacity .12s ease;
+    }
+    button:hover { filter: brightness(.97); transform: translateY(-1px); }
+    button:disabled { opacity: .55; cursor: wait; transform: none; }
+    .btn-secondary { background: #fff; color: #34433c; border: 1px solid var(--line); padding: 11px 14px; }
+    .btn-reset { background: #fff; color: var(--red); border: 1px solid #f1cbd0; padding: 11px 14px; }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-bottom: 17px;
+    }
+    .stat {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+      padding: 15px 17px; box-shadow: 0 3px 12px rgba(22,48,37,.025);
+    }
+    .stat-label { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .stat-value { font-size: 27px; font-weight: 800; letter-spacing: -.04em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .stat-foot { color: var(--muted); font-size: 11px; margin-top: 3px; }
+
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+      padding: 13px; margin-bottom: 12px; box-shadow: 0 3px 12px rgba(22,48,37,.025);
+    }
+    .search-wrap { flex: 1 1 270px; position: relative; }
+    .search-wrap input, .toolbar select {
+      width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 8px;
+      padding: 0 12px; outline: none; background: #fbfdfc; color: var(--ink); font-size: 13px;
+    }
+    .search-wrap input:focus, .toolbar select:focus, .qty-input:focus, .count-input:focus, .remarks-input:focus {
+      border-color: #77b6a0; box-shadow: 0 0 0 3px rgba(18,107,82,.09);
+    }
+    .toolbar select { flex: 0 1 210px; }
+    .progress-wrap { display: flex; align-items: center; gap: 9px; margin-left: auto; min-width: 190px; }
+    .progress-track { height: 8px; background: #eaf0ec; border-radius: 20px; flex: 1; overflow: hidden; }
+    .progress-fill { height: 100%; width: 0; background: var(--green); border-radius: 20px; transition: width .2s ease; }
+    .progress-text { color: var(--muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+
+    .note {
+      font-size: 12px; color: #54645c; margin: 0 0 12px; padding: 0 3px;
+    }
+    .table-shell {
+      overflow: auto; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 13px; box-shadow: var(--shadow); max-height: calc(100vh - 340px);
+      min-height: 300px;
+    }
+    table { width: 100%; min-width: 1110px; border-collapse: separate; border-spacing: 0; }
+    thead th {
+      position: sticky; top: 0; z-index: 2; background: #f7faf8; color: #58675f;
+      text-align: left; font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+      padding: 13px 12px; border-bottom: 1px solid var(--line); white-space: nowrap;
+    }
+    tbody td { padding: 10px 12px; border-bottom: 1px solid #edf1ee; vertical-align: middle; font-size: 12px; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #fbfdfc; }
+    tbody tr.row-check { background: #f6fbf8; }
+    tbody tr.row-x { background: #fff9f9; }
+    .lens-type { max-width: 235px; color: #34443b; font-weight: 700; line-height: 1.35; }
+    .lens-description { color: #1f2b25; font-weight: 700; line-height: 1.35; }
+    .lens-code { display: inline-flex; padding: 4px 7px; border-radius: 6px; background: #f0f4f1; color: #425249; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .qty-input, .count-input {
+      width: 74px; height: 37px; padding: 0 8px; border: 1px solid #dce5df; border-radius: 7px;
+      font-size: 14px; font-weight: 800; text-align: center; color: var(--ink); background: #fff;
+      font-variant-numeric: tabular-nums; outline: none;
+    }
+    .count-input { width: 86px; background: #fbfefc; border-color: #b9d7c9; }
+    .remarks-input {
+      width: 185px; height: 37px; padding: 0 9px; border: 1px solid #dce5df; border-radius: 7px;
+      font-size: 12px; color: var(--ink); outline: none;
+    }
+    .actions { display: flex; gap: 6px; white-space: nowrap; }
+    .btn-check { padding: 9px 11px; color: #fff; background: var(--green); font-size: 11px; }
+    .btn-x { padding: 9px 12px; color: var(--red); background: var(--red-soft); border: 1px solid #f2cbd0; font-size: 11px; }
+    .status {
+      display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 900; letter-spacing: .04em; white-space: nowrap;
+    }
+    .status-pending { background: #eef2ef; color: #68766e; }
+    .status-check { background: var(--green-soft); color: var(--green-dark); }
+    .status-x { background: var(--red-soft); color: var(--red); }
+    .status-dirty { background: var(--amber-soft); color: var(--amber); }
+    .checked-time { color: #87938c; font-size: 10px; margin-top: 4px; white-space: nowrap; }
+    .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
+    .empty strong { display: block; color: var(--ink); margin-bottom: 6px; font-size: 15px; }
+    .loading { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); padding: 50px; font-size: 13px; }
+    .spinner { width: 16px; height: 16px; border: 2px solid #dce7e0; border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast {
+      position: fixed; right: 22px; bottom: 22px; z-index: 10; max-width: min(420px, calc(100vw - 36px));
+      color: #fff; background: #26372f; padding: 13px 16px; border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 13px; line-height: 1.4;
+      opacity: 0; transform: translateY(8px); pointer-events: none; transition: .18s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { background: #8e2634; }
+    .footer { color: #8a958e; text-align: right; padding: 10px 3px 0; font-size: 10px; }
+
+    @media (max-width: 800px) {
+      .page { padding: 18px 12px 35px; }
+      .topbar { display: block; }
+      .top-actions { justify-content: flex-start; margin-top: 15px; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .stat { padding: 12px; }
+      .stat-value { font-size: 23px; }
+      .toolbar select { flex: 1 1 145px; }
+      .progress-wrap { flex: 1 1 100%; margin-left: 0; }
+      .table-shell { max-height: calc(100vh - 390px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Stock control · HO</div>
+        <h1>Lens Inventory Check</h1>
+        <div class="subhead">Count each lens against the recorded quantity. Only items with QTY above zero are shown.</div>
+      </div>
+      <div class="top-actions">
+        <button class="btn-secondary" id="refreshBtn" type="button">↻ Refresh</button>
+        <button class="btn-reset" id="newCountBtn" type="button">Start new count</button>
+      </div>
+    </header>
+
+    <section class="stats" aria-label="Inventory summary">
+      <div class="stat"><div class="stat-label">Active lens records</div><div class="stat-value" id="totalStat">—</div><div class="stat-foot">QTY greater than zero</div></div>
+      <div class="stat"><div class="stat-label">Pending</div><div class="stat-value" id="pendingStat">—</div><div class="stat-foot">Not yet checked</div></div>
+      <div class="stat"><div class="stat-label">Matched · CHECK</div><div class="stat-value" id="checkStat">—</div><div class="stat-foot">Count matches QTY</div></div>
+      <div class="stat"><div class="stat-label">Discrepancy · X</div><div class="stat-value" id="xStat">—</div><div class="stat-foot">Mismatch with remarks</div></div>
+    </section>
+
+    <section class="toolbar" aria-label="Search and filters">
+      <div class="search-wrap"><input id="searchInput" type="search" placeholder="Search lens type, description or code…" autocomplete="off"></div>
+      <select id="typeFilter" aria-label="Filter by lens type"><option value="">All lens types</option></select>
+      <select id="statusFilter" aria-label="Filter by check status">
+        <option value="ALL">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="CHECK">Matched · CHECK</option>
+        <option value="X">Discrepancy · X</option>
+      </select>
+      <div class="progress-wrap"><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><div class="progress-text" id="progressText">0% checked</div></div>
+    </section>
+
+    <p class="note">Edit <b>QTY</b> when the recorded stock figure needs correction, enter the physical count, then press <b>CHECK</b> when the numbers match or <b>X</b> when they differ. X requires a remark. Changes are saved when you press one of those buttons.</p>
+
+    <section class="table-shell">
+      <div id="loading" class="loading"><span class="spinner"></span> Loading lens inventory…</div>
+      <table id="inventoryTable" hidden>
+        <thead>
+          <tr>
+            <th style="width: 230px">Types of lens</th>
+            <th style="width: 220px">Description</th>
+            <th>Lens code</th>
+            <th>QTY · editable</th>
+            <th>Qty counted</th>
+            <th>Remarks · required for X</th>
+            <th>Result</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="inventoryBody"></tbody>
+      </table>
+      <div class="empty" id="emptyState" hidden><strong>No lens records found</strong><span>Try clearing your search or filters.</span></div>
+    </section>
+    <div class="footer" id="footerText">Connected to HO LENS STOCKS</div>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const state = { records: [], loading: false, busyRows: new Set() };
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
+    function showToast(message, isError) {
+      const toast = $('toast');
+      toast.textContent = message;
+      toast.className = 'toast show' + (isError ? ' error' : '');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => { toast.className = 'toast'; }, 3500);
+    }
+
+    function loadInventory() {
+      $('loading').hidden = false;
+      $('inventoryTable').hidden = true;
+      $('emptyState').hidden = true;
+      $('refreshBtn').disabled = true;
+      google.script.run
+        .withSuccessHandler(data => {
+          state.records = (data && data.records) || [];
+          buildTypeFilter();
+          updateSummary();
+          renderRows();
+          $('loading').hidden = true;
+          $('refreshBtn').disabled = false;
+          $('footerText').textContent = 'Loaded ' + state.records.length + ' non-zero lens records · ' + ((data && data.excludedZero) || 0) + ' zero-quantity rows excluded';
+        })
+        .withFailureHandler(error => {
+          $('loading').innerHTML = '<b>Unable to load inventory.</b> ' + escapeHtml(error && error.message ? error.message : error);
+          $('refreshBtn').disabled = false;
+          showToast(error && error.message ? error.message : 'Unable to load inventory.', true);
+        })
+        .getInventoryData();
+    }
+
+    function buildTypeFilter() {
+      const select = $('typeFilter');
+      const previous = select.value;
+      const types = [...new Set(state.records.map(r => r.type).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+      select.innerHTML = '<option value="">All lens types</option>' + types.map(type => '<option value="' + escapeHtml(type) + '">' + escapeHtml(type) + '</option>').join('');
+      if (types.includes(previous)) select.value = previous;
+    }
+
+    function updateSummary() {
+      const total = state.records.length;
+      const checked = state.records.filter(r => !r.dirty && r.status === 'CHECK').length;
+      const mismatched = state.records.filter(r => !r.dirty && r.status === 'X').length;
+      const pending = total - checked - mismatched;
+      const pct = total ? Math.round(((checked + mismatched) / total) * 100) : 0;
+      $('totalStat').textContent = total.toLocaleString();
+      $('pendingStat').textContent = pending.toLocaleString();
+      $('checkStat').textContent = checked.toLocaleString();
+      $('xStat').textContent = mismatched.toLocaleString();
+      $('progressFill').style.width = pct + '%';
+      $('progressText').textContent = pct + '% checked';
+    }
+
+    function getFilteredRecords() {
+      const query = $('searchInput').value.trim().toLowerCase();
+      const type = $('typeFilter').value;
+      const status = $('statusFilter').value;
+      return state.records.filter(r => {
+        const matchesQuery = !query || [r.type, r.description, r.code].some(v => String(v).toLowerCase().includes(query));
+        const matchesType = !type || r.type === type;
+        const effectiveStatus = r.dirty ? 'PENDING' : (r.status || 'PENDING');
+        const matchesStatus = status === 'ALL' || effectiveStatus === status;
+        return matchesQuery && matchesType && matchesStatus;
+      });
+    }
+
+    function statusHtml(record) {
+      if (record.dirty) return '<span class="status status-dirty">● UNSAVED</span>';
+      if (record.status === 'CHECK') return '<span class="status status-check">✓ CHECK</span>';
+      if (record.status === 'X') return '<span class="status status-x">✕ MISMATCH</span>';
+      return '<span class="status status-pending">PENDING</span>';
+    }
+
+    function renderRows() {
+      const records = getFilteredRecords();
+      const body = $('inventoryBody');
+      $('inventoryTable').hidden = records.length === 0;
+      $('emptyState').hidden = records.length !== 0;
+      body.innerHTML = records.map(r => {
+        const rowKey = String(r.rowNumber);
+        const rowClass = r.dirty ? '' : (r.status === 'CHECK' ? 'row-check' : (r.status === 'X' ? 'row-x' : ''));
+        const disabled = state.busyRows.has(rowKey) ? 'disabled' : '';
+        return '<tr data-row="' + rowKey + '" class="' + rowClass + '">' +
+          '<td><div class="lens-type">' + escapeHtml(r.type) + '</div></td>' +
+          '<td><div class="lens-description">' + escapeHtml(r.description) + '</div></td>' +
+          '<td><span class="lens-code">' + escapeHtml(r.code) + '</span></td>' +
+          '<td><input class="qty-input" type="number" min="0" step="1" inputmode="numeric" aria-label="QTY" data-field="qty" data-row="' + rowKey + '" value="' + escapeHtml(r.qty) + '"></td>' +
+          '<td><input class="count-input" type="number" min="0" step="1" inputmode="numeric" aria-label="Quantity counted" data-field="counted" data-row="' + rowKey + '" value="' + (r.counted === null ? '' : escapeHtml(r.counted)) + '" placeholder="Count"></td>' +
+          '<td><input class="remarks-input" type="text" maxlength="250" aria-label="Remarks" data-field="remarks" data-row="' + rowKey + '" value="' + escapeHtml(r.remarks) + '" placeholder="Reason / details"></td>' +
+          '<td><div class="status-cell">' + statusHtml(r) + (r.checkedAt && !r.dirty ? '<div class="checked-time">' + escapeHtml(r.checkedAt) + '</div>' : '') + '</div></td>' +
+          '<td><div class="actions"><button class="btn-check" type="button" data-action="CHECK" data-row="' + rowKey + '" ' + disabled + '>✓ CHECK</button><button class="btn-x" type="button" data-action="X" data-row="' + rowKey + '" ' + disabled + '>✕ X</button></div></td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    function updateRecordFromInput(input) {
+      const rowNumber = Number(input.dataset.row);
+      const record = state.records.find(r => r.rowNumber === rowNumber);
+      if (!record) return;
+      const field = input.dataset.field;
+      if (field === 'qty' || field === 'counted') {
+        record[field] = input.value.trim() === '' ? null : Number(input.value);
+      } else if (field === 'remarks') {
+        record.remarks = input.value;
+      }
+      record.dirty = true;
+      const tr = input.closest('tr');
+      if (tr) {
+        tr.classList.remove('row-check', 'row-x');
+        const statusCell = tr.querySelector('.status-cell');
+        if (statusCell) statusCell.innerHTML = statusHtml(record);
+      }
+      updateSummary();
+    }
+
+    function handleAction(button) {
+      const rowNumber = Number(button.dataset.row);
+      const record = state.records.find(r => r.rowNumber === rowNumber);
+      if (!record || state.busyRows.has(String(rowNumber))) return;
+
+      // Read directly from the visible row so the latest keystrokes are used.
+      const tr = button.closest('tr');
+      const qtyValue = tr.querySelector('[data-field="qty"]').value.trim();
+      const countedValue = tr.querySelector('[data-field="counted"]').value.trim();
+      const remarks = tr.querySelector('[data-field="remarks"]').value.trim();
+      if (qtyValue === '' || !Number.isInteger(Number(qtyValue)) || Number(qtyValue) < 0) {
+        showToast('QTY must be a whole number equal to or greater than zero.', true); return;
+      }
+      if (countedValue === '' || !Number.isInteger(Number(countedValue)) || Number(countedValue) < 0) {
+        showToast('Enter the physical counted quantity first.', true); return;
+      }
+      const qty = Number(qtyValue);
+      const counted = Number(countedValue);
+      const action = button.dataset.action;
+      if (action === 'CHECK' && qty !== counted) {
+        showToast('The quantities do not match. Press X and add a remark.', true); return;
+      }
+      if (action === 'X' && qty === counted) {
+        showToast('The quantities match. Press CHECK instead.', true); return;
+      }
+      if (action === 'X' && !remarks) {
+        showToast('Add a remark before pressing X.', true); return;
+      }
+
+      state.busyRows.add(String(rowNumber));
+      tr.querySelectorAll('button').forEach(b => b.disabled = true);
+      google.script.run
+        .withSuccessHandler(result => {
+          state.busyRows.delete(String(rowNumber));
+          if (result.removedFromActiveList) {
+            state.records = state.records.filter(r => r.rowNumber !== rowNumber);
+          } else {
+            record.qty = result.qty;
+            record.counted = result.counted;
+            record.remarks = result.remarks;
+            record.status = result.status;
+            record.checkedAt = result.checkedAt;
+            record.dirty = false;
+          }
+          updateSummary();
+          renderRows();
+          showToast(action === 'CHECK' ? 'Saved: quantity matched.' : 'Saved: discrepancy recorded.');
+        })
+        .withFailureHandler(error => {
+          state.busyRows.delete(String(rowNumber));
+          tr.querySelectorAll('button').forEach(b => b.disabled = false);
+          showToast(error && error.message ? error.message : 'Could not save this row.', true);
+        })
+        .recordInventoryAction({
+          rowNumber: rowNumber,
+          qty: qty,
+          counted: counted,
+          remarks: remarks,
+          action: action
+        });
+    }
+
+    $('inventoryBody').addEventListener('input', event => {
+      if (event.target && event.target.dataset && event.target.dataset.field) updateRecordFromInput(event.target);
+    });
+    $('inventoryBody').addEventListener('click', event => {
+      const button = event.target.closest('button[data-action]');
+      if (button) handleAction(button);
+    });
+    $('searchInput').addEventListener('input', renderRows);
+    $('typeFilter').addEventListener('change', renderRows);
+    $('statusFilter').addEventListener('change', renderRows);
+    $('refreshBtn').addEventListener('click', loadInventory);
+    $('newCountBtn').addEventListener('click', () => {
+      const confirmed = confirm('Start a new inventory count?\n\nPreviously entered counted quantities, remarks and CHECK/X results will first be copied to the HO LENS HISTORY tab. Then the current count fields will be cleared. Your QTY values will not change.');
+      if (!confirmed) return;
+      $('newCountBtn').disabled = true;
+      google.script.run
+        .withSuccessHandler(result => {
+          $('newCountBtn').disabled = false;
+          showToast('New count started. Archived ' + result.archived + ' previous result(s).');
+          loadInventory();
+        })
+        .withFailureHandler(error => {
+          $('newCountBtn').disabled = false;
+          showToast(error && error.message ? error.message : 'Could not start a new count.', true);
+        })
+        .startNewInventory();
+    });
+
+    window.addEventListener('beforeunload', event => {
+      if (state.records.some(r => r.dirty)) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    });
+
+    loadInventory();
+  </script>
+</body>
+</html>
