@@ -145,6 +145,8 @@
         <button type="button" id="closeReportBtn" class="icon-close" aria-label="Close report">×</button>
       </div>
 
+      <label class="label" for="reportPreparedBy">Your name</label>
+      <input id="reportPreparedBy" class="field" type="text" autocomplete="name" maxlength="80" placeholder="Enter the name of the person preparing this report">
       <label class="label" for="reportRecipient">Send report to email</label>
       <input id="reportRecipient" class="field" type="email" inputmode="email" autocomplete="email" placeholder="recipient@example.com">
       <div class="report-actions">
@@ -402,7 +404,7 @@
       all.sort((a,b)=>Number(a.source_row_number||Number.MAX_SAFE_INTEGER)-Number(b.source_row_number||Number.MAX_SAFE_INTEGER));
       return all;
     }
-    async function buildExcelReport(rows){
+    async function buildExcelReport(rows,preparedBy=''){
       if(!window.ExcelJS)throw new Error('Excel report library did not load. Check your internet connection and reload.');
       const workbook=new ExcelJS.Workbook();
       workbook.creator='HO Stock Control';workbook.subject='Lens inventory report';workbook.title='HO Lens Stock Report';workbook.created=new Date();workbook.modified=new Date();
@@ -434,8 +436,17 @@
         row.getCell(6).alignment={horizontal:'left',vertical:'middle',wrapText:true};
       });
       const lastRow=Math.max(firstDataRow,firstDataRow+rows.length-1);
+      ws.getCell('A2').value=`DATE: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}`;
+      if(String(preparedBy||'').trim())ws.getCell('B2').value=`PREPARED BY: ${String(preparedBy).trim()}`;
       ws.getCell('G2').value={formula:`SUM(D${firstDataRow}:D${lastRow})`,result:totalQty};
       ws.getRow(1).height=36;ws.getRow(2).height=40;ws.getRow(3).height=32;
+      for(const cellRef of ['A2','B2']){
+        const metaCell=ws.getCell(cellRef);
+        metaCell.font={name:'Aptos',size:10,bold:true,color:{argb:'FF1C2A25'}};
+        metaCell.alignment={horizontal:'left',vertical:'middle',wrapText:true};
+        metaCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
+        metaCell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
+      }
       ws.getCell('A1').font={name:'Aptos Display',size:19,bold:true,color:{argb:'FFFFFFFF'}};
       ws.getCell('A1').alignment={vertical:'middle',horizontal:'left'};
       for(let c=1;c<=6;c++)ws.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
@@ -480,7 +491,7 @@
     async function downloadExcelReport(){
       const btn=$('downloadReportBtn');setBusy(btn,true,'BUILDING…');
       try{
-        const rows=state.reportRows||await fetchReportRows();const report=await buildExcelReport(rows);
+        const rows=state.reportRows||await fetchReportRows();const report=await buildExcelReport(rows,$('reportPreparedBy').value.trim());
         downloadBuffer(report.buffer,reportFilename());showToast(`Excel report ready · ${report.rowCount} source rows · total QTY ${report.totalQty.toLocaleString()}.`);
       }catch(err){showToast('Excel report failed: '+(err?.message||String(err)),8500);}
       finally{setBusy(btn,false,'DOWNLOAD EXCEL');}
@@ -509,14 +520,16 @@
       throw new Error('Email request was submitted, but Google Apps Script did not return a confirmation within 45 seconds. Check the Apps Script Executions page and your Gmail Sent folder.');
     }
     async function sendExcelReport(){
+      const preparedBy=$('reportPreparedBy').value.trim();
       const recipient=$('reportRecipient').value.trim().toLowerCase();
+      if(!preparedBy){showToast('Enter your name before sending the report.');$('reportPreparedBy').focus();return;}
       if(!recipient||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)){showToast('Enter a valid recipient email address.');$('reportRecipient').focus();return;}
       if(!EMAIL_SCRIPT_URL||EMAIL_SCRIPT_URL.includes('PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE')){
         showToast('Google email sender is not configured yet. Deploy the Apps Script emailer and paste its Web App URL into index.html.',8500);return;
       }
       const btn=$('sendReportBtn');setBusy(btn,true,'SENDING…');$('downloadReportBtn').disabled=true;
       try{
-        const rows=state.reportRows||await fetchReportRows();const report=await buildExcelReport(rows);
+        const rows=state.reportRows||await fetchReportRows();const report=await buildExcelReport(rows,preparedBy);
         const requestId='ho_'+Date.now()+'_'+Math.random().toString(36).slice(2,12);
         const payload={requestId,to:recipient,filename:reportFilename(),attachmentBase64:toBase64(report.buffer),rowCount:report.rowCount,totalQty:report.totalQty};
         const form=new URLSearchParams();form.set('payload',JSON.stringify(payload));
