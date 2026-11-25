@@ -390,7 +390,7 @@
       const all=[];let from=0;const chunk=1000;
       while(true){
         const {data,error}=await state.client.from(TABLE)
-          .select('lens_type,description,lens_code,qty,source_row_number,is_active')
+          .select('lens_type,description,lens_code,qty,qty_counted,remarks,source_row_number,is_active')
           .eq('is_active',true)
           .order('source_row_number',{ascending:true})
           .range(from,from+chunk-1);
@@ -408,17 +408,18 @@
       workbook.creator='HO Stock Control';workbook.subject='Lens inventory report';workbook.title='HO Lens Stock Report';workbook.created=new Date();workbook.modified=new Date();
       // Freeze the title/total area and the column-header row while scrolling.
       const ws=workbook.addWorksheet('HO Lens Report',{views:[{state:'frozen',ySplit:3,topLeftCell:'A4'}]});
-      ws.columns=[{width:20},{width:29},{width:16},{width:12},{width:21}];
-      ws.mergeCells('A1:D1');ws.getCell('A1').value='HO LENS STOCK REPORT';
-      ws.getCell('E1').value='TOTAL LENS QTY';
-      const headers=['TYPES OF LENS','DESCRIPTION','LENS CODE','QTY'];
+      ws.columns=[{width:20},{width:29},{width:16},{width:12},{width:16},{width:42},{width:15}];
+      ws.mergeCells('A1:F1');ws.getCell('A1').value='HO LENS STOCK REPORT';
+      ws.getCell('G1').value='TOTAL LENS QTY';
+      const headers=['TYPES OF LENS','DESCRIPTION','LENS CODE','QTY','QTY COUNTED','REMARKS'];
       headers.forEach((h,i)=>ws.getCell(3,i+1).value=h);
       const totalQty=rows.reduce((sum,r)=>sum+(Number(r.qty)||0),0);
       const firstDataRow=4;
       rows.forEach((r,i)=>{
         const row=ws.getRow(firstDataRow+i);
-        row.values=[r.lens_type??'',r.description??'',r.lens_code??'',Number(r.qty)||0];
-        row.height=20;
+        row.values=[r.lens_type??'',r.description??'',r.lens_code??'',Number(r.qty)||0,r.qty_counted==null?'':Number(r.qty_counted),r.remarks??''];
+        const remarksLength=String(r.remarks??'').length;
+        row.height=Math.max(20,Math.min(90,Math.ceil(Math.max(1,remarksLength)/55)*15));
         row.eachCell({includeEmpty:true},cell=>{
           cell.font={name:'Aptos',size:10,color:{argb:'FF1C2A25'}};
           cell.alignment={vertical:'middle',wrapText:true};
@@ -428,25 +429,28 @@
         row.getCell(3).alignment={horizontal:'center',vertical:'middle'};
         row.getCell(4).alignment={horizontal:'center',vertical:'middle'};
         row.getCell(4).numFmt='#,##0';
+        row.getCell(5).alignment={horizontal:'center',vertical:'middle'};
+        if(r.qty_counted!=null)row.getCell(5).numFmt='#,##0';
+        row.getCell(6).alignment={horizontal:'left',vertical:'middle',wrapText:true};
       });
       const lastRow=Math.max(firstDataRow,firstDataRow+rows.length-1);
-      ws.getCell('E2').value={formula:`SUM(D${firstDataRow}:D${lastRow})`,result:totalQty};
+      ws.getCell('G2').value={formula:`SUM(D${firstDataRow}:D${lastRow})`,result:totalQty};
       ws.getRow(1).height=36;ws.getRow(2).height=40;ws.getRow(3).height=32;
       ws.getCell('A1').font={name:'Aptos Display',size:19,bold:true,color:{argb:'FFFFFFFF'}};
       ws.getCell('A1').alignment={vertical:'middle',horizontal:'left'};
-      for(let c=1;c<=4;c++)ws.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
-      ws.getCell('E1').font={name:'Aptos',size:9,bold:true,color:{argb:'FF1F5A4A'}};
-      ws.getCell('E1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
-      ws.getCell('E1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
-      ws.getCell('E2').font={name:'Aptos Display',size:23,bold:true,color:{argb:'FF0B7654'}};
-      ws.getCell('E2').alignment={horizontal:'center',vertical:'middle'};
-      ws.getCell('E2').numFmt='#,##0';ws.getCell('E2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
-      for(let c=1;c<=4;c++){
+      for(let c=1;c<=6;c++)ws.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
+      ws.getCell('G1').font={name:'Aptos',size:9,bold:true,color:{argb:'FF1F5A4A'}};
+      ws.getCell('G1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
+      ws.getCell('G1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
+      ws.getCell('G2').font={name:'Aptos Display',size:23,bold:true,color:{argb:'FF0B7654'}};
+      ws.getCell('G2').alignment={horizontal:'center',vertical:'middle'};
+      ws.getCell('G2').numFmt='#,##0';ws.getCell('G2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
+      for(let c=1;c<=6;c++){
         const header=ws.getCell(3,c);header.font={name:'Aptos',size:10,bold:true,color:{argb:'FFFFFFFF'}};
         header.alignment={horizontal:'center',vertical:'middle',wrapText:true};
         header.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F5A4A'}};
       }
-      ws.autoFilter={from:'A3',to:`D${lastRow}`};
+      ws.autoFilter={from:'A3',to:`F${lastRow}`};
       return {workbook,buffer:await workbook.xlsx.writeBuffer(),totalQty,rowCount:rows.length};
     }
     function toBase64(buffer){
