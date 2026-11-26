@@ -539,7 +539,7 @@
       workbook.creator='HO Stock Control';workbook.subject='Lens inventory report';workbook.title='HO Lens Stock Report';workbook.created=new Date();workbook.modified=new Date();
       // Freeze the title/total area and the column-header row while scrolling.
       const ws=workbook.addWorksheet('HO Lens Report',{views:[{state:'frozen',ySplit:3,topLeftCell:'A4'}]});
-      ws.columns=[{width:20},{width:29},{width:16},{width:12},{width:16},{width:42},{width:15}];
+      ws.columns=[{width:24},{width:36},{width:21},{width:15},{width:20},{width:48},{width:17}];
       ws.mergeCells('A1:F1');ws.getCell('A1').value='HO LENS STOCK REPORT';
       ws.getCell('G1').value='TOTAL LENS QTY';
       const headers=['TYPES OF LENS','DESCRIPTION','LENS CODE','QTY','QTY COUNTED','REMARKS'];
@@ -549,12 +549,17 @@
       rows.forEach((r,i)=>{
         const row=ws.getRow(firstDataRow+i);
         row.values=[r.lens_type??'',r.description??'',r.lens_code??'',Number(r.qty)||0,r.qty_counted==null?'':Number(r.qty_counted),r.remarks??''];
-        const remarksLength=String(r.remarks??'').length;
-        row.height=Math.max(26,Math.min(100,Math.ceil(Math.max(1,remarksLength)/45)*18));
+        const lineEstimate=Math.max(1,
+          Math.ceil(String(r.lens_type??'').length/18),
+          Math.ceil(String(r.description??'').length/27),
+          Math.ceil(String(r.lens_code??'').length/15),
+          Math.ceil(String(r.remarks??'').length/38)
+        );
+        row.height=Math.max(52,Math.min(180,lineEstimate*38));
         row.eachCell({includeEmpty:true},cell=>{
-          cell.font={name:'Aptos',size:12,color:{argb:'FF1C2A25'}};
-          cell.alignment={vertical:'middle',wrapText:true};
-          cell.border={bottom:{style:'hair',color:{argb:'FFE5ECE7'}}};
+          cell.font={name:'Aptos',size:24,color:{argb:'FF1C2A25'}};
+          cell.alignment={vertical:'middle',wrapText:true,indent:1};
+          cell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
         });
         if(i%2===0){row.eachCell({includeEmpty:true},cell=>{cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};});}
         row.getCell(3).alignment={horizontal:'center',vertical:'middle'};
@@ -568,25 +573,25 @@
       ws.getCell('A2').value=`DATE: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}`;
       if(String(preparedBy||'').trim())ws.getCell('B2').value=`PREPARED BY: ${String(preparedBy).trim()}`;
       ws.getCell('G2').value={formula:`SUM(D${firstDataRow}:D${lastRow})`,result:totalQty};
-      ws.getRow(1).height=40;ws.getRow(2).height=42;ws.getRow(3).height=42;
+      ws.getRow(1).height=48;ws.getRow(2).height=56;ws.getRow(3).height=64;
       for(const cellRef of ['A2','B2']){
         const metaCell=ws.getCell(cellRef);
-        metaCell.font={name:'Aptos',size:12,bold:true,color:{argb:'FF1C2A25'}};
+        metaCell.font={name:'Aptos',size:24,bold:true,color:{argb:'FF1C2A25'}};
         metaCell.alignment={horizontal:'left',vertical:'middle',wrapText:true};
         metaCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
         metaCell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
       }
-      ws.getCell('A1').font={name:'Aptos Display',size:21,bold:true,color:{argb:'FFFFFFFF'}};
+      ws.getCell('A1').font={name:'Aptos Display',size:32,bold:true,color:{argb:'FFFFFFFF'}};
       ws.getCell('A1').alignment={vertical:'middle',horizontal:'left'};
       for(let c=1;c<=6;c++)ws.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
-      ws.getCell('G1').font={name:'Aptos',size:11,bold:true,color:{argb:'FF1F5A4A'}};
+      ws.getCell('G1').font={name:'Aptos',size:18,bold:true,color:{argb:'FF1F5A4A'}};
       ws.getCell('G1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
       ws.getCell('G1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
-      ws.getCell('G2').font={name:'Aptos Display',size:23,bold:true,color:{argb:'FF0B7654'}};
+      ws.getCell('G2').font={name:'Aptos Display',size:30,bold:true,color:{argb:'FF0B7654'}};
       ws.getCell('G2').alignment={horizontal:'center',vertical:'middle'};
       ws.getCell('G2').numFmt='#,##0';ws.getCell('G2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
       for(let c=1;c<=6;c++){
-        const header=ws.getCell(3,c);header.font={name:'Aptos',size:14,bold:true,color:{argb:'FFFFFFFF'}};
+        const header=ws.getCell(3,c);header.font={name:'Aptos',size:28,bold:true,color:{argb:'FFFFFFFF'}};
         header.alignment={horizontal:'center',vertical:'middle',wrapText:true};
         header.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F5A4A'}};
       }
