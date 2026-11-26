@@ -219,6 +219,109 @@
       .description-qty-layout .lens-code strong{font-size:21px}
     }
 
+
+
+    /* Long-text safeguard: keep descriptions inside the card and pin actions at the bottom. */
+    @media(max-width:759px){
+      .lens-card{
+        display:flex;
+        flex-direction:column;
+        min-height:0;
+        overflow:hidden;
+      }
+      .lens-card > .card-meta-row{
+        order:1;
+        flex:0 0 auto;
+        min-height:0;
+        max-height:calc(2.4em + 20px);
+        margin:0 0 7px;
+        overflow:hidden;
+      }
+      .lens-card > .card-meta-row .lens-type{
+        display:-webkit-box;
+        -webkit-box-orient:vertical;
+        -webkit-line-clamp:2;
+        flex:0 1 auto;
+        min-width:0;
+        max-width:100%;
+        max-height:2.45em;
+        line-height:1.2;
+        white-space:normal;
+        overflow:hidden;
+        overflow-wrap:anywhere;
+      }
+      .lens-card > .description-qty-layout{
+        order:2;
+        flex:1 1 auto;
+        min-height:0;
+        min-width:0;
+        overflow:hidden;
+        align-items:flex-start;
+        margin:0 0 7px;
+      }
+      .lens-card .description-qty-main{
+        flex:1 1 0;
+        min-width:0;
+        min-height:0;
+        overflow:hidden;
+      }
+      .lens-card .description-qty-main .lens-name{
+        display:-webkit-box;
+        -webkit-box-orient:vertical;
+        -webkit-line-clamp:2;
+        max-height:2.36em;
+        min-height:0;
+        overflow:hidden;
+        overflow-wrap:anywhere;
+        text-overflow:ellipsis;
+      }
+      .lens-card .description-qty-main .qty-inline{
+        flex:0 0 auto;
+        align-self:flex-start;
+      }
+      .lens-card .description-qty-layout .lens-code{
+        flex:0 0 auto;
+        min-width:0;
+        max-width:40%;
+      }
+      .lens-card > .status-qty-row{
+        order:3;
+        flex:0 0 auto;
+        min-height:0;
+        margin:0 0 4px;
+      }
+      /* Notes are placed before controls so they cannot push the buttons below the card. */
+      .lens-card > .note{
+        order:4;
+        flex:0 0 auto;
+        max-height:2.5em;
+        margin-top:3px;
+        overflow:hidden;
+        display:-webkit-box;
+        -webkit-box-orient:vertical;
+        -webkit-line-clamp:2;
+        line-height:1.2;
+      }
+      .lens-card > .actions{
+        order:5;
+        flex:0 0 auto;
+        min-height:36px;
+        margin-top:auto;
+        position:relative;
+        z-index:1;
+      }
+      .lens-card > .actions .action{
+        min-width:0;
+        height:clamp(36px,5.2vh,46px);
+      }
+    }
+    @media(max-width:360px){
+      .lens-card > .card-meta-row{margin-bottom:5px}
+      .lens-card > .description-qty-layout{gap:7px;margin-bottom:5px}
+      .lens-card .description-qty-main{gap:9px}
+      .lens-card > .actions .action{height:34px;font-size:12px}
+    }
+
   </style>
 </head>
 <body>
@@ -370,11 +473,11 @@
       const busy=state.saving.has(String(r.id));
       return `<article class="lens-card" data-id="${esc(r.id)}">
         <div class="card-meta-row">
-          <div class="lens-type">${esc(r.lens_type)}</div>
+          <div class="lens-type" title="${esc(r.lens_type)}">${esc(r.lens_type)}</div>
         </div>
         <div class="description-qty-layout">
           <div class="description-qty-main">
-            <div class="lens-name">${esc(r.description)}</div>
+            <div class="lens-name" title="${esc(r.description)}">${esc(r.description)}</div>
             <div class="qty-inline"><span class="qty-caption">QTY</span><span class="qty-num">${esc(r.qty)}</span></div>
           </div>
           <div class="lens-code"><span class="lens-code-label">LENS CODE</span><strong>${esc(r.lens_code)}</strong></div>
