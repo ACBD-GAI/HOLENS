@@ -160,6 +160,40 @@
       .action{height:29px}
     }
 
+
+    /* Readability update: larger lens details and search results while retaining the two-card phone layout. */
+    .stat .l{font-size:9px;letter-spacing:.035em}
+    .progress-head{font-size:10px}
+    .result-count{font-size:11px}
+    .reset{font-size:10px}
+    .lens-type{font-size:10px;padding:4px 7px}
+    .lens-name{font-size:clamp(14px,4vw,16px);line-height:1.2;-webkit-line-clamp:2}
+    .lens-code-label{font-size:9px}
+    .lens-code strong{font-size:clamp(16px,4.5vw,19px);line-height:1.12}
+    .qty-caption{font-size:9px}
+    .qty-num{font-size:22px}
+    .mismatch-flag{font-size:9px}
+    .action{font-size:13px}
+    .note{font-size:10px;line-height:1.25}
+    .page-btn{font-size:10px}
+    .page-info{font-size:9px}
+    .search-results-head{font-size:13px}
+    .text-button{font-size:11px}
+    .search-result-label{font-size:11px}
+    .search-result-type{font-size:12px}
+    .search-result-desc{font-size:15px;line-height:1.35}
+    .search-result-code{font-size:14px;line-height:1.35}
+    .search-result-status{font-size:10px}
+    .search-result-open{font-size:10px}
+    .search-empty{font-size:13px}
+    @media(max-height:600px){
+      .lens-name{font-size:14px;-webkit-line-clamp:2}
+      .qty-num{font-size:20px}
+      .action{font-size:12px}
+      .note{font-size:9px;-webkit-line-clamp:1;max-height:1.25em}
+      .page-info{font-size:8px}
+    }
+
   </style>
 </head>
 <body>
@@ -516,9 +550,9 @@
         const row=ws.getRow(firstDataRow+i);
         row.values=[r.lens_type??'',r.description??'',r.lens_code??'',Number(r.qty)||0,r.qty_counted==null?'':Number(r.qty_counted),r.remarks??''];
         const remarksLength=String(r.remarks??'').length;
-        row.height=Math.max(20,Math.min(90,Math.ceil(Math.max(1,remarksLength)/55)*15));
+        row.height=Math.max(26,Math.min(100,Math.ceil(Math.max(1,remarksLength)/45)*18));
         row.eachCell({includeEmpty:true},cell=>{
-          cell.font={name:'Aptos',size:10,color:{argb:'FF1C2A25'}};
+          cell.font={name:'Aptos',size:12,color:{argb:'FF1C2A25'}};
           cell.alignment={vertical:'middle',wrapText:true};
           cell.border={bottom:{style:'hair',color:{argb:'FFE5ECE7'}}};
         });
@@ -534,25 +568,25 @@
       ws.getCell('A2').value=`DATE: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}`;
       if(String(preparedBy||'').trim())ws.getCell('B2').value=`PREPARED BY: ${String(preparedBy).trim()}`;
       ws.getCell('G2').value={formula:`SUM(D${firstDataRow}:D${lastRow})`,result:totalQty};
-      ws.getRow(1).height=36;ws.getRow(2).height=40;ws.getRow(3).height=32;
+      ws.getRow(1).height=40;ws.getRow(2).height=42;ws.getRow(3).height=42;
       for(const cellRef of ['A2','B2']){
         const metaCell=ws.getCell(cellRef);
-        metaCell.font={name:'Aptos',size:10,bold:true,color:{argb:'FF1C2A25'}};
+        metaCell.font={name:'Aptos',size:12,bold:true,color:{argb:'FF1C2A25'}};
         metaCell.alignment={horizontal:'left',vertical:'middle',wrapText:true};
         metaCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
         metaCell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
       }
-      ws.getCell('A1').font={name:'Aptos Display',size:19,bold:true,color:{argb:'FFFFFFFF'}};
+      ws.getCell('A1').font={name:'Aptos Display',size:21,bold:true,color:{argb:'FFFFFFFF'}};
       ws.getCell('A1').alignment={vertical:'middle',horizontal:'left'};
       for(let c=1;c<=6;c++)ws.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
-      ws.getCell('G1').font={name:'Aptos',size:9,bold:true,color:{argb:'FF1F5A4A'}};
+      ws.getCell('G1').font={name:'Aptos',size:11,bold:true,color:{argb:'FF1F5A4A'}};
       ws.getCell('G1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
       ws.getCell('G1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
       ws.getCell('G2').font={name:'Aptos Display',size:23,bold:true,color:{argb:'FF0B7654'}};
       ws.getCell('G2').alignment={horizontal:'center',vertical:'middle'};
       ws.getCell('G2').numFmt='#,##0';ws.getCell('G2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
       for(let c=1;c<=6;c++){
-        const header=ws.getCell(3,c);header.font={name:'Aptos',size:10,bold:true,color:{argb:'FFFFFFFF'}};
+        const header=ws.getCell(3,c);header.font={name:'Aptos',size:14,bold:true,color:{argb:'FFFFFFFF'}};
         header.alignment={horizontal:'center',vertical:'middle',wrapText:true};
         header.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F5A4A'}};
       }
