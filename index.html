@@ -456,6 +456,26 @@
       if(error){state.rows[i]=original;render();showToast('Save failed: '+error.message);return false;}
       state.rows[i]=data;render();showToast(success);return true;
     }
+    function isRowCompleted(row){
+      // A page item is complete only after a successful CHECK or a saved
+      // MISMATCH that includes its required remarks.
+      return row.check_status==='MATCHED' ||
+        (row.check_status==='MISMATCH' && String(row.remarks||'').trim().length>0);
+    }
+    function advancePageWhenAllItemsCompleted(){
+      // Keep the current two cards on screen until BOTH are completed.
+      // savePatch() calls render(), so state.filtered already reflects the
+      // latest saved status when this function runs.
+      const start=(state.currentPage-1)*PAGE_SIZE;
+      const pageItems=state.filtered.slice(start,start+PAGE_SIZE);
+      if(!pageItems.length || !pageItems.every(isRowCompleted))return false;
+      const totalPages=Math.max(1,Math.ceil(state.filtered.length/PAGE_SIZE));
+      if(state.currentPage>=totalPages)return false;
+      state.currentPage++;
+      render();
+      window.scrollTo({top:0,behavior:'smooth'});
+      return true;
+    }
     async function matchRow(id){
       const row=state.rows.find(r=>String(r.id)===String(id));if(!row||state.saving.has(String(id)))return;
       // The CHECK button toggles: soft red while unchecked, green while checked.
@@ -464,15 +484,9 @@
         await savePatch(row,{qty_counted:null,check_status:'PENDING',remarks:null,checked_at:null},'Check removed. This lens is unchecked again.');
         return;
       }
-      const pageBeforeSave=state.currentPage;
       const ok=await savePatch(row,{qty_counted:Number(row.qty),check_status:'MATCHED',remarks:null,checked_at:new Date().toISOString()},'Marked as matched.');
       if(!ok)return;
-      const remaining=getFiltered();
-      const stillVisible=remaining.some(r=>String(r.id)===String(id));
-      const pageCount=Math.max(1,Math.ceil(remaining.length/PAGE_SIZE));
-      state.currentPage=stillVisible?Math.min(pageBeforeSave+1,pageCount):Math.min(pageBeforeSave,pageCount);
-      render();
-      window.scrollTo({top:0,behavior:'smooth'});
+      advancePageWhenAllItemsCompleted();
     }
     function openModal(row){
       state.modalMode='mismatch';state.modalRow=row;$('modalBackdrop').classList.remove('hidden');$('remarks').value='';
@@ -485,7 +499,10 @@
       event.preventDefault();const row=state.modalRow;if(!row)return;const v=$('actualCount').value;if(v.trim()===''||!Number.isInteger(Number(v))||Number(v)<0){showToast('Enter a valid whole number.');return;}
       const count=Number(v);const remarks=$('remarks').value.trim();if(count===Number(row.qty)){showToast('This count matches. Use the green CHECK button.');return;}if(!remarks){showToast('Remarks are required for a mismatch.');return;}
       const btn=$('saveModal');setBusy(btn,true,'SAVING…');
-      try{const ok=await savePatch(row,{qty_counted:count,check_status:'MISMATCH',remarks,checked_at:new Date().toISOString()},'Mismatch saved with remarks.');if(ok)closeModal();}
+      try{
+        const ok=await savePatch(row,{qty_counted:count,check_status:'MISMATCH',remarks,checked_at:new Date().toISOString()},'Mismatch saved with remarks.');
+        if(ok){closeModal();advancePageWhenAllItemsCompleted();}
+      }
       finally{setBusy(btn,false,'SAVE X');btn.textContent='SAVE X';}
     }
     async function syncFromGoogleSheet(){
