@@ -441,7 +441,7 @@
     const { createClient } = window.supabase || {};
 
     const $ = (id) => document.getElementById(id);
-    const state = { client:null, rows:[], filtered:[], reportRows:null, currentPage:1, saving:new Set(), modalMode:null, modalRow:null, channel:null, toastTimer:null };
+    const state = { client:null, rows:[], filtered:[], reportRows:null, reportCache:null, currentPage:1, saving:new Set(), modalMode:null, modalRow:null, channel:null, toastTimer:null };
 
     function esc(value){return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function showToast(message,duration=3200){const el=$('toast');el.textContent=message;el.classList.remove('hidden');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.add('hidden'),duration);}
@@ -544,7 +544,7 @@
     function subscribeRealtime(){
       if(state.channel)state.client.removeChannel(state.channel);
       state.channel=state.client.channel('ho-lens-inventory-live').on('postgres_changes',{event:'*',schema:'public',table:TABLE},payload=>{
-        const updated=payload.new||payload.old;if(!updated)return;state.reportRows=null;const i=state.rows.findIndex(r=>String(r.id)===String(updated.id));
+        const updated=payload.new||payload.old;if(!updated)return;state.reportRows=null;state.reportCache=null;const i=state.rows.findIndex(r=>String(r.id)===String(updated.id));
         if(payload.eventType==='DELETE'){if(i>=0)state.rows.splice(i,1);}
         else if(updated.is_active!==false && Number(updated.qty)>0){if(i>=0)state.rows[i]={...state.rows[i],...updated};else state.rows.push(updated);}
         else if(i>=0){state.rows.splice(i,1);}
@@ -558,6 +558,7 @@
       const {data,error}=await state.client.from(TABLE).update(patch).eq('id',row.id).select('id,lens_type,description,lens_code,qty,qty_counted,remarks,check_status,checked_at,updated_at,is_active,source_row_number').single();
       state.saving.delete(id);
       if(error){state.rows[i]=original;render();showToast('Save failed: '+error.message);return false;}
+      state.reportRows=null;state.reportCache=null;
       state.rows[i]=data;render();showToast(success);return true;
     }
     function isRowCompleted(row){
@@ -615,7 +616,7 @@
         const {data,error}=await state.client.functions.invoke(SYNC_FUNCTION,{method:'POST',body:{}});
         if(error)throw error;
         const result=data||{};
-        state.reportRows=null;
+        state.reportRows=null;state.reportCache=null;
         await loadInventory();
         showToast(`Google Sheet synced: ${result.source_rows??result.synced_rows??'All'} rows. Active lenses: ${result.active_rows??state.rows.length}.`);
       }catch(err){
@@ -689,128 +690,194 @@
     async function buildExcelReport(rows,preparedBy=''){
       if(!window.ExcelJS)throw new Error('Excel report library did not load. Check your internet connection and reload the page.');
       if(!Array.isArray(rows))throw new Error('Report data is not available. Close the report and open it again.');
+
       const workbook=new ExcelJS.Workbook();
       workbook.creator='HO Stock Control';
       workbook.subject='Lens inventory report';
       workbook.title='HO Lens Stock Report';
       workbook.created=new Date();
       workbook.modified=new Date();
-      workbook.calcProperties.fullCalcOnLoad=true;
 
-      // Three balanced columns keep the vertical item layout readable in Excel
-      // on phones and prevent print scaling caused by the old seven-column sheet.
+      // Keep each field in its own real Excel column. This avoids the previous
+      // vertical/merged layout that placed every value into one column.
       const ws=workbook.addWorksheet('HO Lens Report',{
-        views:[{state:'frozen',ySplit:3,topLeftCell:'A4',zoomScale:110,zoomScaleNormal:100}]
+        views:[{state:'frozen',ySplit:4,topLeftCell:'A5',zoomScale:90,zoomScaleNormal:100}]
       });
-      ws.columns=[{width:27},{width:27},{width:27}];
+      ws.columns=[
+        {width:27},
+        {width:52},
+        {width:18},
+        {width:12},
+        {width:17},
+        {width:42}
+      ];
       ws.pageSetup={
-        orientation:'portrait',
+        orientation:'landscape',
         fitToPage:true,
         fitToWidth:1,
         fitToHeight:0,
         paperSize:9,
-        margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.15,footer:0.15}
+        margins:{left:0.25,right:0.25,top:0.35,bottom:0.35,header:0.15,footer:0.15}
       };
-      ws.properties.defaultRowHeight=22;
+      ws.properties.defaultRowHeight=30;
 
       const reportDate=new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'});
       const prepared=String(preparedBy||'').trim();
       const totalQty=rows.reduce((sum,r)=>sum+(Number(r.qty)||0),0);
-      const reportTitle=ws.getCell('A1');
-      ws.mergeCells('A1:B1');
-      reportTitle.value='HO LENS STOCK REPORT';
-      reportTitle.font={name:'Aptos Display',size:24,bold:true,color:{argb:'FFFFFFFF'}};
-      reportTitle.alignment={vertical:'middle',horizontal:'left',indent:1};
-      reportTitle.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
-      ws.getCell('B1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
-      ws.getCell('C1').value='TOTAL LENS QTY';
-      ws.getCell('C1').font={name:'Aptos',size:13,bold:true,color:{argb:'FF1F5A4A'}};
-      ws.getCell('C1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
-      ws.getCell('C1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
-      ws.getRow(1).height=48;
 
+      // Report title and total quantity summary.
+      ws.mergeCells('A1:C1');
+      ws.getCell('A1').value='HO LENS STOCK REPORT';
+      ws.getCell('A1').font={name:'Aptos Display',size:22,bold:true,color:{argb:'FFFFFFFF'}};
+      ws.getCell('A1').alignment={horizontal:'left',vertical:'middle',indent:1};
+      ws.getCell('A1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
+      for(let c=1;c<=3;c++)ws.getRow(1).getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
+      ws.mergeCells('D1:E1');
+      ws.getCell('D1').value='TOTAL LENS QTY';
+      ws.getCell('D1').font={name:'Aptos',size:13,bold:true,color:{argb:'FF1F5A4A'}};
+      ws.getCell('D1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
+      ws.getCell('D1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
+      ws.getCell('F1').value=totalQty;
+      ws.getCell('F1').font={name:'Aptos Display',size:20,bold:true,color:{argb:'FF0B7654'}};
+      ws.getCell('F1').alignment={horizontal:'center',vertical:'middle'};
+      ws.getCell('F1').numFmt='#,##0';
+      ws.getCell('F1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
+      ws.getRow(1).height=44;
+
+      // Keep the date in A2 and prepared-by name beside it in B2.
       ws.getCell('A2').value='DATE: '+reportDate;
+      ws.getCell('A2').font={name:'Aptos',size:12,bold:true,color:{argb:'FF1C2A25'}};
+      ws.getCell('A2').alignment={horizontal:'left',vertical:'middle',wrapText:true,indent:1};
+      ws.getCell('A2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
+      ws.mergeCells('B2:F2');
       ws.getCell('B2').value=prepared?'PREPARED BY: '+prepared:'PREPARED BY:';
-      for(const address of ['A2','B2']){
-        const cell=ws.getCell(address);
-        cell.font={name:'Aptos',size:13,bold:true,color:{argb:'FF1C2A25'}};
-        cell.alignment={horizontal:'left',vertical:'middle',wrapText:true,indent:1};
-        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
-        cell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
-      }
-      ws.getCell('C2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
-      ws.getCell('C2').value=totalQty;
-      ws.getCell('C2').font={name:'Aptos Display',size:22,bold:true,color:{argb:'FF0B7654'}};
-      ws.getCell('C2').alignment={horizontal:'center',vertical:'middle'};
-      ws.getCell('C2').numFmt='#,##0';
-      ws.getRow(2).height=48;
+      ws.getCell('B2').font={name:'Aptos',size:12,bold:true,color:{argb:'FF1C2A25'}};
+      ws.getCell('B2').alignment={horizontal:'left',vertical:'middle',wrapText:true,indent:1};
+      ws.getCell('B2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
+      ws.getRow(2).height=34;
 
-      ws.mergeCells('A3:C3');
+      ws.mergeCells('A3:F3');
       ws.getCell('A3').value='LENS INVENTORY DETAILS';
-      ws.getCell('A3').font={name:'Aptos Display',size:17,bold:true,color:{argb:'FFFFFFFF'}};
+      ws.getCell('A3').font={name:'Aptos Display',size:15,bold:true,color:{argb:'FFFFFFFF'}};
       ws.getCell('A3').alignment={horizontal:'left',vertical:'middle',indent:1};
       ws.getCell('A3').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F5A4A'}};
-      ws.getCell('A3').border={bottom:{style:'medium',color:{argb:'FF12372F'}}};
-      ws.getRow(3).height=38;
+      ws.getRow(3).height=32;
 
-      let currentRow=4;
-      const addField=(label,value,opts={})=>{
-        const labelRow=ws.getRow(currentRow++);
-        ws.mergeCells(`A${labelRow.number}:C${labelRow.number}`);
-        const labelCell=ws.getCell(`A${labelRow.number}`);
-        labelCell.value=label;
-        labelRow.height=opts.labelHeight||28;
-        labelCell.font={name:'Aptos Display',size:opts.labelFontSize||16,bold:true,color:{argb:'FF245B48'}};
-        labelCell.alignment={horizontal:'left',vertical:'middle',indent:1};
-        labelCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8F3EC'}};
-        labelCell.border={top:{style:'thin',color:{argb:'FFD7EADF'}},left:{style:'thin',color:{argb:'FFD7EADF'}},right:{style:'thin',color:{argb:'FFD7EADF'}}};
+      // Actual six-column header row.
+      const headers=['TYPES OF LENS','DESCRIPTION','LENS CODE','QTY','QTY COUNTED','REMARKS'];
+      const headerRow=ws.getRow(4);
+      headers.forEach((label,index)=>{
+        const cell=headerRow.getCell(index+1);
+        cell.value=label;
+        cell.font={name:'Aptos Display',size:14,bold:true,color:{argb:'FFFFFFFF'}};
+        cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF245B48'}};
+        cell.border={
+          top:{style:'thin',color:{argb:'FF12372F'}},
+          bottom:{style:'medium',color:{argb:'FF12372F'}},
+          left:{style:'thin',color:{argb:'FFE0E9E3'}},
+          right:{style:'thin',color:{argb:'FFE0E9E3'}}
+        };
+      });
+      headerRow.height=38;
 
-        const valueRow=ws.getRow(currentRow++);
-        ws.mergeCells(`A${valueRow.number}:C${valueRow.number}`);
-        const valueCell=ws.getCell(`A${valueRow.number}`);
-        valueCell.value=value==null?'':value;
-        const raw=String(value==null?'':value);
-        const charsPerLine=opts.charsPerLine||72;
-        const lines=raw.split(/\r\n|\r|\n/).reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/charsPerLine)),0)||1;
-        valueRow.height=Math.max(opts.minHeight||52,Math.min(opts.maxHeight||160,lines*(opts.lineHeight||36)));
-        valueCell.font={name:'Aptos',size:opts.fontSize||24,bold:opts.bold!==false,color:{argb:opts.color||'FF1C2A25'}};
-        valueCell.alignment={horizontal:opts.align||'left',vertical:'middle',wrapText:true,indent:1};
-        valueCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:opts.fill||'FFFFFFFF'}};
-        valueCell.border={left:{style:'thin',color:{argb:'FFD7EADF'}},right:{style:'thin',color:{argb:'FFD7EADF'}},bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
-
-        if(opts.gapHeight){
-          const spacer=ws.getRow(currentRow++);
-          spacer.height=opts.gapHeight;
-          spacer.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFFFF'}};
-        }
+      const numericOrText=value=>{
+        if(value===null||value===undefined||value==='')return '';
+        const number=Number(value);
+        return Number.isFinite(number)?number:String(value);
+      };
+      const wrapLines=(value,width)=>{
+        const raw=String(value??'');
+        if(!raw)return 1;
+        return raw.split(/\r\n|\r|\n/).reduce((sum,line)=>sum+Math.max(1,Math.ceil(line.length/Math.max(8,width))),0);
       };
 
-      rows.forEach((r,i)=>{
-        addField('TYPES OF LENS',r.lens_type??'',{fontSize:26,bold:true,color:'FF174F40',fill:'FFEAF4EE',minHeight:56,charsPerLine:65,gapHeight:12});
-        addField('DESCRIPTION',r.description??'',{fontSize:24,bold:true,minHeight:64,maxHeight:180,charsPerLine:72,lineHeight:34,gapHeight:12});
-        addField('LENS CODE',r.lens_code??'',{fontSize:26,bold:true,color:'FF1D3547',fill:'FFF0F5FA',minHeight:56,gapHeight:12});
-        addField('QTY',r.qty==null?'':Number(r.qty),{fontSize:30,bold:true,color:'FF174F40',fill:'FFFFF3C9',minHeight:60,align:'left',gapHeight:12});
-        addField('QTY COUNTED',r.qty_counted==null?'':Number(r.qty_counted),{fontSize:25,bold:true,color:'FF174F40',fill:'FFF0F7F2',minHeight:56,align:'left',gapHeight:12});
-        addField('REMARKS',r.remarks??'',{fontSize:22,bold:false,minHeight:56,maxHeight:160,charsPerLine:72,lineHeight:32,gapHeight:0});
-        if(i<rows.length-1){
-          const separator=ws.getRow(currentRow++);
-          ws.mergeCells(`A${separator.number}:C${separator.number}`);
-          separator.height=22;
-          ws.getCell(`A${separator.number}`).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDCEBE2'}};
-          ws.getCell(`A${separator.number}`).border={bottom:{style:'medium',color:{argb:'FF9BBBAD'}}};
+      rows.forEach((r,index)=>{
+        const values=[
+          r.lens_type??'',
+          r.description??'',
+          r.lens_code??'',
+          numericOrText(r.qty),
+          numericOrText(r.qty_counted),
+          r.remarks??''
+        ];
+        const row=ws.addRow(values);
+        const lineCount=Math.max(
+          wrapLines(values[0],24),
+          wrapLines(values[1],48),
+          wrapLines(values[2],16),
+          wrapLines(values[4],15),
+          wrapLines(values[5],38)
+        );
+        row.height=Math.max(38,Math.min(132,Math.ceil(lineCount)*20+12));
+        const alternate=index%2===1;
+        row.eachCell({includeEmpty:true},(cell,colNumber)=>{
+          cell.font={name:'Aptos',size:13,bold:colNumber===1||colNumber===3,color:{argb:'FF1C2A25'}};
+          cell.alignment={
+            horizontal:colNumber===4||colNumber===5?'center':'left',
+            vertical:'middle',
+            wrapText:true,
+            indent:colNumber===4||colNumber===5?0:1
+          };
+          cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:alternate?'FFF5F8F6':'FFFFFFFF'}};
+          cell.border={
+            top:{style:'hair',color:{argb:'FFDCE6DF'}},
+            bottom:{style:'thin',color:{argb:'FFDCE6DF'}},
+            left:{style:'thin',color:{argb:'FFE6ECE8'}},
+            right:{style:'thin',color:{argb:'FFE6ECE8'}}
+          };
+        });
+        row.getCell(1).font={name:'Aptos',size:14,bold:true,color:{argb:'FF174F40'}};
+        row.getCell(3).font={name:'Aptos',size:14,bold:true,color:{argb:'FF1D3547'}};
+        row.getCell(4).font={name:'Aptos Display',size:16,bold:true,color:{argb:'FF174F40'}};
+        row.getCell(4).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF3C9'}};
+        row.getCell(4).numFmt='#,##0.##';
+        row.getCell(5).font={name:'Aptos Display',size:15,bold:true,color:{argb:'FF174F40'}};
+        row.getCell(5).numFmt='#,##0.##';
+        if(r.qty_counted!==null&&r.qty_counted!==undefined&&r.qty_counted!==''&&Number(r.qty_counted)!==Number(r.qty)){
+          row.getCell(5).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFE8E6'}};
+          row.getCell(5).font={name:'Aptos Display',size:15,bold:true,color:{argb:'FFB42318'}};
+        }else{
+          row.getCell(5).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEAF4EE'}};
         }
+        row.getCell(6).font={name:'Aptos',size:12,bold:false,color:{argb:'FF1C2A25'}};
       });
-      const lastRow=Math.max(3,currentRow-1);
-      ws.pageSetup.printArea=`A1:C${lastRow}`;
-      ws.autoFilter=null;
+
+      const lastRow=Math.max(4,ws.rowCount);
+      ws.autoFilter={from:'A4',to:`F${lastRow}`};
+      ws.pageSetup.printArea=`A1:F${lastRow}`;
+      ws.pageSetup.printTitlesRow='1:4';
       const buffer=await workbook.xlsx.writeBuffer();
       if(!buffer||!buffer.byteLength)throw new Error('Excel workbook was generated empty. Please try again.');
       return {workbook,buffer,totalQty,rowCount:rows.length};
     }
-    function toBase64(buffer){
-      const bytes=new Uint8Array(buffer);let binary='';const chunkSize=0x8000;
-      for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,i+chunkSize));
-      return btoa(binary);
+    async function bufferToBase64Async(buffer){
+      if(!buffer||!buffer.byteLength)throw new Error('The Excel attachment is empty.');
+      // FileReader performs the binary-to-base64 conversion in the browser's
+      // native code instead of constructing a huge JavaScript string on the UI
+      // thread (which can freeze lower-powered phones during email sending).
+      const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      return await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>{
+          const result=String(reader.result||'');
+          const comma=result.indexOf(',');
+          if(comma<0){reject(new Error('Could not encode the Excel attachment.'));return;}
+          resolve(result.slice(comma+1));
+        };
+        reader.onerror=()=>reject(reader.error||new Error('Could not read the Excel attachment.'));
+        reader.onabort=()=>reject(new Error('Excel attachment preparation was interrupted.'));
+        reader.readAsDataURL(blob);
+      });
+    }
+    async function getCachedExcelReport(preparedBy=''){
+      if(!Array.isArray(state.reportRows))state.reportRows=await fetchReportRows();
+      const name=String(preparedBy||'').trim();
+      const cached=state.reportCache;
+      if(cached&&cached.rows===state.reportRows&&cached.preparedBy===name)return cached.report;
+      const report=await buildExcelReport(state.reportRows,name);
+      state.reportCache={rows:state.reportRows,preparedBy:name,report};
+      return report;
     }
     function reportFilename(){
       const now=new Date();
@@ -838,6 +905,7 @@
       $('downloadReportBtn').disabled=true;
       $('sendReportBtn').disabled=true;
       state.reportRows=null;
+      state.reportCache=null;
       try{
         state.reportRows=await fetchReportRows();
         $('downloadReportBtn').disabled=false;
@@ -851,8 +919,7 @@
       const btn=$('downloadReportBtn');
       setBusy(btn,true,'BUILDING…');
       try{
-        if(!Array.isArray(state.reportRows))state.reportRows=await fetchReportRows();
-        const report=await buildExcelReport(state.reportRows,$('reportPreparedBy').value.trim());
+        const report=await getCachedExcelReport($('reportPreparedBy').value.trim());
         downloadBuffer(report.buffer,reportFilename());
         showToast(`Excel report ready · ${report.rowCount} source rows · total QTY ${report.totalQty.toLocaleString()}.`,6500);
       }catch(err){
@@ -868,7 +935,7 @@
         const callback='__hoLensStatus_'+Date.now()+'_'+Math.random().toString(36).slice(2);
         const script=document.createElement('script');let finished=false;
         const cleanup=()=>{if(finished)return;finished=true;try{delete window[callback];}catch{window[callback]=undefined;}script.remove();};
-        const timer=setTimeout(()=>{cleanup();resolve({status:'unknown'});},9000);
+        const timer=setTimeout(()=>{cleanup();resolve({status:'unknown'});},4000);
         window[callback]=(data)=>{clearTimeout(timer);cleanup();resolve(data||{status:'unknown'});};
         script.onerror=()=>{clearTimeout(timer);cleanup();resolve({status:'unknown'});};
         script.src=EMAIL_SCRIPT_URL+'?action=status&requestId='+encodeURIComponent(requestId)+'&callback='+encodeURIComponent(callback)+'&_='+Date.now();
@@ -899,9 +966,10 @@
       setBusy(btn,true,'SENDING…');
       $('downloadReportBtn').disabled=true;
       try{
-        if(!Array.isArray(state.reportRows))state.reportRows=await fetchReportRows();
-        const report=await buildExcelReport(state.reportRows,preparedBy);
-        const attachmentBase64=toBase64(report.buffer);
+        btn.textContent='BUILDING EXCEL…';
+        const report=await getCachedExcelReport(preparedBy);
+        btn.textContent='PREPARING ATTACHMENT…';
+        const attachmentBase64=await bufferToBase64Async(report.buffer);
         if(!attachmentBase64)throw new Error('The Excel attachment could not be encoded.');
         const requestId='ho_'+Date.now()+'_'+Math.random().toString(36).slice(2,12);
         const payload={
@@ -916,6 +984,7 @@
         form.set('payload',JSON.stringify(payload));
         // Keep the deployed Apps Script form endpoint contract: no-cors avoids
         // preflight, and the JSONP status endpoint confirms completion.
+        btn.textContent='SENDING EMAIL…';
         await fetch(EMAIL_SCRIPT_URL,{
           method:'POST',
           mode:'no-cors',
@@ -923,6 +992,7 @@
           headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
           body:form.toString()
         });
+        btn.textContent='CONFIRMING EMAIL…';
         await waitForAppsScriptEmail(requestId);
         showToast(`Excel report emailed to ${recipient}.`,6500);
         closeReportModal();
@@ -949,6 +1019,7 @@
       const btn=$('resetBtn');btn.disabled=true;btn.textContent='RESETTING…';
       const {error}=await state.client.from(TABLE).update({qty_counted:null,remarks:null,check_status:'PENDING',checked_at:null}).gte('id',1);
       btn.disabled=false;btn.textContent='RESET CHECKS';if(error){showToast('Reset failed: '+error.message);return;}
+      state.reportRows=null;state.reportCache=null;
       state.rows=state.rows.map(r=>({...r,qty_counted:null,remarks:null,check_status:'PENDING',checked_at:null}));render();showToast('All checks reset.');
     }
     function goToPage(){
