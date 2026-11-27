@@ -831,9 +831,9 @@
         row.getCell(3).font={name:'Aptos',size:14,bold:true,color:{argb:'FF1D3547'}};
         row.getCell(4).font={name:'Aptos Display',size:16,bold:true,color:{argb:'FF174F40'}};
         row.getCell(4).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF3C9'}};
-        row.getCell(4).numFmt='#,##0.##';
+        row.getCell(4).numFmt='#,##0'; // Whole-piece quantity: never show a trailing decimal point.
         row.getCell(5).font={name:'Aptos Display',size:15,bold:true,color:{argb:'FF174F40'}};
-        row.getCell(5).numFmt='#,##0.##';
+        row.getCell(5).numFmt='#,##0'; // Whole-piece quantity: never show a trailing decimal point.
         if(r.qty_counted!==null&&r.qty_counted!==undefined&&r.qty_counted!==''&&Number(r.qty_counted)!==Number(r.qty)){
           row.getCell(5).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFE8E6'}};
           row.getCell(5).font={name:'Aptos Display',size:15,bold:true,color:{argb:'FFB42318'}};
