@@ -405,6 +405,7 @@
       <input id="reportPreparedBy" class="field" type="text" autocomplete="name" maxlength="80" placeholder="Enter the name of the person preparing this report">
       <label class="label" for="reportRecipient">Send report to email</label>
       <input id="reportRecipient" class="field" type="email" inputmode="email" autocomplete="email" placeholder="recipient@example.com">
+      <p class="report-footnote">The Excel attachment includes the report date, prepared-by name, expected QTY, QTY counted, and remarks.</p>
       <div class="report-actions">
         <button type="button" id="downloadReportBtn" class="secondary report-download" disabled>DOWNLOAD EXCEL</button>
         <button type="button" id="sendReportBtn" class="report-send" disabled>EMAIL REPORT</button>
@@ -661,122 +662,176 @@
       state.currentPage=index+1;
       closeSearchModal();render();window.scrollTo({top:0,behavior:'smooth'});
     }
-
     async function fetchReportRows(){
-      const all=[];let from=0;const chunk=1000;
+      // Fetch every active row, including zero-QTY rows, in safe Supabase chunks.
+      const all=[];
+      const chunk=500;
+      let from=0;
       while(true){
         const {data,error}=await state.client.from(TABLE)
-          .select('lens_type,description,lens_code,qty,qty_counted,remarks,source_row_number,is_active')
+          .select('id,lens_type,description,lens_code,qty,qty_counted,remarks,source_row_number,is_active')
           .eq('is_active',true)
           .order('source_row_number',{ascending:true})
           .range(from,from+chunk-1);
-        if(error)throw error;
-        all.push(...(data||[]));
-        if(!data||data.length<chunk)break;
+        if(error)throw new Error('Could not retrieve report rows: '+error.message);
+        const batch=Array.isArray(data)?data:[];
+        all.push(...batch);
+        if(batch.length<chunk)break;
         from+=chunk;
       }
-      all.sort((a,b)=>Number(a.source_row_number||Number.MAX_SAFE_INTEGER)-Number(b.source_row_number||Number.MAX_SAFE_INTEGER));
+      all.sort((a,b)=>{
+        const av=a.source_row_number==null?Number.MAX_SAFE_INTEGER:Number(a.source_row_number);
+        const bv=b.source_row_number==null?Number.MAX_SAFE_INTEGER:Number(b.source_row_number);
+        return av-bv || String(a.id??'').localeCompare(String(b.id??''));
+      });
       return all;
     }
     async function buildExcelReport(rows,preparedBy=''){
-      if(!window.ExcelJS)throw new Error('Excel report library did not load. Check your internet connection and reload.');
+      if(!window.ExcelJS)throw new Error('Excel report library did not load. Check your internet connection and reload the page.');
+      if(!Array.isArray(rows))throw new Error('Report data is not available. Close the report and open it again.');
       const workbook=new ExcelJS.Workbook();
-      workbook.creator='HO Stock Control';workbook.subject='Lens inventory report';workbook.title='HO Lens Stock Report';workbook.created=new Date();workbook.modified=new Date();
-      // Vertical item cards create clear breathing room between the lens type,
-      // description, code and quantity instead of squeezing large text into columns.
-      const ws=workbook.addWorksheet('HO Lens Report',{views:[{state:'frozen',ySplit:3,topLeftCell:'A4',zoomScale:120,zoomScaleNormal:100}]});
-      ws.columns=[{width:27},{width:27},{width:27},{width:27},{width:27},{width:27},{width:20}];
-      ws.pageSetup={orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9,margins:{left:0.35,right:0.35,top:0.45,bottom:0.45,header:0.2,footer:0.2}};
-      ws.mergeCells('A1:F1');ws.getCell('A1').value='HO LENS STOCK REPORT';
-      ws.getCell('G1').value='TOTAL LENS QTY';
-      ws.mergeCells('A3:F3');ws.getCell('A3').value='LENS INVENTORY DETAILS';
+      workbook.creator='HO Stock Control';
+      workbook.subject='Lens inventory report';
+      workbook.title='HO Lens Stock Report';
+      workbook.created=new Date();
+      workbook.modified=new Date();
+      workbook.calcProperties.fullCalcOnLoad=true;
+
+      // Three balanced columns keep the vertical item layout readable in Excel
+      // on phones and prevent print scaling caused by the old seven-column sheet.
+      const ws=workbook.addWorksheet('HO Lens Report',{
+        views:[{state:'frozen',ySplit:3,topLeftCell:'A4',zoomScale:110,zoomScaleNormal:100}]
+      });
+      ws.columns=[{width:27},{width:27},{width:27}];
+      ws.pageSetup={
+        orientation:'portrait',
+        fitToPage:true,
+        fitToWidth:1,
+        fitToHeight:0,
+        paperSize:9,
+        margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.15,footer:0.15}
+      };
+      ws.properties.defaultRowHeight=22;
+
+      const reportDate=new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'});
+      const prepared=String(preparedBy||'').trim();
       const totalQty=rows.reduce((sum,r)=>sum+(Number(r.qty)||0),0);
-      ws.getCell('A2').value=`DATE: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}`;
-      if(String(preparedBy||'').trim())ws.getCell('B2').value=`PREPARED BY: ${String(preparedBy).trim()}`;
-      ws.getCell('G2').value=totalQty;
-      ws.getRow(1).height=58;ws.getRow(2).height=56;ws.getRow(3).height=42;
-      for(const cellRef of ['A2','B2']){
-        const metaCell=ws.getCell(cellRef);
-        metaCell.font={name:'Aptos',size:18,bold:true,color:{argb:'FF1C2A25'}};
-        metaCell.alignment={horizontal:'left',vertical:'middle',wrapText:true};
-        metaCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
-        metaCell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
+      const reportTitle=ws.getCell('A1');
+      ws.mergeCells('A1:B1');
+      reportTitle.value='HO LENS STOCK REPORT';
+      reportTitle.font={name:'Aptos Display',size:24,bold:true,color:{argb:'FFFFFFFF'}};
+      reportTitle.alignment={vertical:'middle',horizontal:'left',indent:1};
+      reportTitle.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
+      ws.getCell('B1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
+      ws.getCell('C1').value='TOTAL LENS QTY';
+      ws.getCell('C1').font={name:'Aptos',size:13,bold:true,color:{argb:'FF1F5A4A'}};
+      ws.getCell('C1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
+      ws.getCell('C1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
+      ws.getRow(1).height=48;
+
+      ws.getCell('A2').value='DATE: '+reportDate;
+      ws.getCell('B2').value=prepared?'PREPARED BY: '+prepared:'PREPARED BY:';
+      for(const address of ['A2','B2']){
+        const cell=ws.getCell(address);
+        cell.font={name:'Aptos',size:13,bold:true,color:{argb:'FF1C2A25'}};
+        cell.alignment={horizontal:'left',vertical:'middle',wrapText:true,indent:1};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F6F2'}};
+        cell.border={bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
       }
-      ws.getCell('A1').font={name:'Aptos Display',size:30,bold:true,color:{argb:'FFFFFFFF'}};
-      ws.getCell('A1').alignment={vertical:'middle',horizontal:'left',indent:1};
-      for(let c=1;c<=6;c++)ws.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF12372F'}};
-      ws.getCell('G1').font={name:'Aptos',size:16,bold:true,color:{argb:'FF1F5A4A'}};
-      ws.getCell('G1').alignment={horizontal:'center',vertical:'middle',wrapText:true};
-      ws.getCell('G1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD7EADF'}};
-      ws.getCell('G2').font={name:'Aptos Display',size:24,bold:true,color:{argb:'FF0B7654'}};
-      ws.getCell('G2').alignment={horizontal:'center',vertical:'middle'};
-      ws.getCell('G2').numFmt='#,##0';ws.getCell('G2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
-      ws.getCell('A3').font={name:'Aptos Display',size:21,bold:true,color:{argb:'FFFFFFFF'}};
+      ws.getCell('C2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0F7F2'}};
+      ws.getCell('C2').value=totalQty;
+      ws.getCell('C2').font={name:'Aptos Display',size:22,bold:true,color:{argb:'FF0B7654'}};
+      ws.getCell('C2').alignment={horizontal:'center',vertical:'middle'};
+      ws.getCell('C2').numFmt='#,##0';
+      ws.getRow(2).height=48;
+
+      ws.mergeCells('A3:C3');
+      ws.getCell('A3').value='LENS INVENTORY DETAILS';
+      ws.getCell('A3').font={name:'Aptos Display',size:17,bold:true,color:{argb:'FFFFFFFF'}};
       ws.getCell('A3').alignment={horizontal:'left',vertical:'middle',indent:1};
       ws.getCell('A3').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F5A4A'}};
       ws.getCell('A3').border={bottom:{style:'medium',color:{argb:'FF12372F'}}};
+      ws.getRow(3).height=38;
 
       let currentRow=4;
       const addField=(label,value,opts={})=>{
         const labelRow=ws.getRow(currentRow++);
-        ws.mergeCells(labelRow.number,1,labelRow.number,6);
-        const labelCell=ws.getCell(labelRow.number,1);
+        ws.mergeCells(`A${labelRow.number}:C${labelRow.number}`);
+        const labelCell=ws.getCell(`A${labelRow.number}`);
         labelCell.value=label;
-        labelRow.height=30;
-        labelCell.font={name:'Aptos Display',size:20,bold:true,color:{argb:'FF245B48'}};
+        labelRow.height=opts.labelHeight||28;
+        labelCell.font={name:'Aptos Display',size:opts.labelFontSize||16,bold:true,color:{argb:'FF245B48'}};
         labelCell.alignment={horizontal:'left',vertical:'middle',indent:1};
         labelCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8F3EC'}};
         labelCell.border={top:{style:'thin',color:{argb:'FFD7EADF'}},left:{style:'thin',color:{argb:'FFD7EADF'}},right:{style:'thin',color:{argb:'FFD7EADF'}}};
 
         const valueRow=ws.getRow(currentRow++);
-        ws.mergeCells(valueRow.number,1,valueRow.number,6);
-        const valueCell=ws.getCell(valueRow.number,1);
+        ws.mergeCells(`A${valueRow.number}:C${valueRow.number}`);
+        const valueCell=ws.getCell(`A${valueRow.number}`);
         valueCell.value=value==null?'':value;
         const raw=String(value==null?'':value);
-        const charsPerLine=opts.charsPerLine||54;
-        const lines=Math.max(1,Math.ceil(raw.length/charsPerLine));
-        valueRow.height=Math.max(opts.minHeight||58,Math.min(opts.maxHeight||150,lines*(opts.lineHeight||42)));
-        valueCell.font={name:'Aptos',size:opts.fontSize||30,bold:opts.bold!==false,color:{argb:opts.color||'FF1C2A25'}};
+        const charsPerLine=opts.charsPerLine||72;
+        const lines=raw.split(/\r\n|\r|\n/).reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/charsPerLine)),0)||1;
+        valueRow.height=Math.max(opts.minHeight||52,Math.min(opts.maxHeight||160,lines*(opts.lineHeight||36)));
+        valueCell.font={name:'Aptos',size:opts.fontSize||24,bold:opts.bold!==false,color:{argb:opts.color||'FF1C2A25'}};
         valueCell.alignment={horizontal:opts.align||'left',vertical:'middle',wrapText:true,indent:1};
         valueCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:opts.fill||'FFFFFFFF'}};
         valueCell.border={left:{style:'thin',color:{argb:'FFD7EADF'}},right:{style:'thin',color:{argb:'FFD7EADF'}},bottom:{style:'thin',color:{argb:'FFD7EADF'}}};
 
-        const spacer=ws.getRow(currentRow++);
-        spacer.height=opts.gapHeight||18;
+        if(opts.gapHeight){
+          const spacer=ws.getRow(currentRow++);
+          spacer.height=opts.gapHeight;
+          spacer.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFFFF'}};
+        }
       };
 
       rows.forEach((r,i)=>{
-        // Keep the most important fields separated vertically and retain the
-        // additional counting and remarks information beneath them.
-        addField('TYPES OF LENS',r.lens_type??'',{fontSize:32,bold:true,color:'FF174F40',fill:'FFEAF4EE',minHeight:62,charsPerLine:45,gapHeight:22});
-        addField('DESCRIPTION',r.description??'',{fontSize:30,bold:true,minHeight:76,maxHeight:190,charsPerLine:58,lineHeight:42,gapHeight:22});
-        addField('LENS CODE',r.lens_code??'',{fontSize:32,bold:true,color:'FF1D3547',align:'left',fill:'FFF0F5FA',minHeight:62,gapHeight:22});
-        addField('QTY',Number(r.qty)||0,{fontSize:36,bold:true,color:'FF174F40',fill:'FFFFF3C9',minHeight:68,align:'left',gapHeight:22});
-        addField('QTY COUNTED',r.qty_counted==null?'':Number(r.qty_counted),{fontSize:30,bold:true,color:'FF174F40',fill:'FFF0F7F2',minHeight:62,align:'left',gapHeight:22});
-        addField('REMARKS',r.remarks??'',{fontSize:26,bold:false,minHeight:62,maxHeight:170,charsPerLine:58,lineHeight:38,gapHeight:0});
+        addField('TYPES OF LENS',r.lens_type??'',{fontSize:26,bold:true,color:'FF174F40',fill:'FFEAF4EE',minHeight:56,charsPerLine:65,gapHeight:12});
+        addField('DESCRIPTION',r.description??'',{fontSize:24,bold:true,minHeight:64,maxHeight:180,charsPerLine:72,lineHeight:34,gapHeight:12});
+        addField('LENS CODE',r.lens_code??'',{fontSize:26,bold:true,color:'FF1D3547',fill:'FFF0F5FA',minHeight:56,gapHeight:12});
+        addField('QTY',r.qty==null?'':Number(r.qty),{fontSize:30,bold:true,color:'FF174F40',fill:'FFFFF3C9',minHeight:60,align:'left',gapHeight:12});
+        addField('QTY COUNTED',r.qty_counted==null?'':Number(r.qty_counted),{fontSize:25,bold:true,color:'FF174F40',fill:'FFF0F7F2',minHeight:56,align:'left',gapHeight:12});
+        addField('REMARKS',r.remarks??'',{fontSize:22,bold:false,minHeight:56,maxHeight:160,charsPerLine:72,lineHeight:32,gapHeight:0});
         if(i<rows.length-1){
           const separator=ws.getRow(currentRow++);
-          ws.mergeCells(separator.number,1,separator.number,6);
-          separator.height=30;
-          const separatorCell=ws.getCell(separator.number,1);
-          separatorCell.value='';
-          separatorCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDCEBE2'}};
-          separatorCell.border={bottom:{style:'medium',color:{argb:'FF9BBBAD'}}};
+          ws.mergeCells(`A${separator.number}:C${separator.number}`);
+          separator.height=22;
+          ws.getCell(`A${separator.number}`).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDCEBE2'}};
+          ws.getCell(`A${separator.number}`).border={bottom:{style:'medium',color:{argb:'FF9BBBAD'}}};
         }
       });
       const lastRow=Math.max(3,currentRow-1);
+      ws.pageSetup.printArea=`A1:C${lastRow}`;
       ws.autoFilter=null;
-      return {workbook,buffer:await workbook.xlsx.writeBuffer(),totalQty,rowCount:rows.length};
+      const buffer=await workbook.xlsx.writeBuffer();
+      if(!buffer||!buffer.byteLength)throw new Error('Excel workbook was generated empty. Please try again.');
+      return {workbook,buffer,totalQty,rowCount:rows.length};
     }
     function toBase64(buffer){
       const bytes=new Uint8Array(buffer);let binary='';const chunkSize=0x8000;
       for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,i+chunkSize));
       return btoa(binary);
     }
-    function reportFilename(){return `HO_Lens_Inventory_Report_${new Date().toISOString().slice(0,10)}.xlsx`;}
+    function reportFilename(){
+      const now=new Date();
+      const stamp=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+      return `HO_Lens_Inventory_Report_${stamp}.xlsx`;
+    }
     function downloadBuffer(buffer,filename){
+      if(!buffer||!buffer.byteLength)throw new Error('The Excel file is empty. Please rebuild the report.');
       const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=filename;
+      a.style.display='none';
+      document.body.appendChild(a);
+      try{a.click();}
+      finally{
+        a.remove();
+        // Mobile browsers may need longer to finish handing the file to Downloads.
+        setTimeout(()=>URL.revokeObjectURL(url),60000);
+      }
     }
     async function openReportModal(){
       $('reportBackdrop').classList.remove('hidden');
@@ -793,12 +848,19 @@
     }
     function closeReportModal(){$('reportBackdrop').classList.add('hidden');}
     async function downloadExcelReport(){
-      const btn=$('downloadReportBtn');setBusy(btn,true,'BUILDING…');
+      const btn=$('downloadReportBtn');
+      setBusy(btn,true,'BUILDING…');
       try{
-        const rows=state.reportRows||await fetchReportRows();const report=await buildExcelReport(rows,$('reportPreparedBy').value.trim());
-        downloadBuffer(report.buffer,reportFilename());showToast(`Excel report ready · ${report.rowCount} source rows · total QTY ${report.totalQty.toLocaleString()}.`);
-      }catch(err){showToast('Excel report failed: '+(err?.message||String(err)),8500);}
-      finally{setBusy(btn,false,'DOWNLOAD EXCEL');}
+        if(!Array.isArray(state.reportRows))state.reportRows=await fetchReportRows();
+        const report=await buildExcelReport(state.reportRows,$('reportPreparedBy').value.trim());
+        downloadBuffer(report.buffer,reportFilename());
+        showToast(`Excel report ready · ${report.rowCount} source rows · total QTY ${report.totalQty.toLocaleString()}.`,6500);
+      }catch(err){
+        console.error('HO Lens Excel download failed:',err);
+        showToast('Excel report failed: '+(err?.message||String(err)),10000);
+      }finally{
+        setBusy(btn,false,'DOWNLOAD EXCEL');
+      }
     }
     function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
     function getAppsScriptStatus(requestId){
@@ -827,24 +889,50 @@
       const preparedBy=$('reportPreparedBy').value.trim();
       const recipient=$('reportRecipient').value.trim().toLowerCase();
       if(!preparedBy){showToast('Enter your name before sending the report.');$('reportPreparedBy').focus();return;}
-      if(!recipient||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)){showToast('Enter a valid recipient email address.');$('reportRecipient').focus();return;}
-      if(!EMAIL_SCRIPT_URL||EMAIL_SCRIPT_URL.includes('PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE')){
-        showToast('Google email sender is not configured yet. Deploy the Apps Script emailer and paste its Web App URL into index.html.',8500);return;
+      if(!recipient||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)){
+        showToast('Enter a valid recipient email address.');$('reportRecipient').focus();return;
       }
-      const btn=$('sendReportBtn');setBusy(btn,true,'SENDING…');$('downloadReportBtn').disabled=true;
+      if(!EMAIL_SCRIPT_URL||EMAIL_SCRIPT_URL.includes('PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE')){
+        showToast('Google email sender is not configured. Check EMAIL_SCRIPT_URL in this file.',9000);return;
+      }
+      const btn=$('sendReportBtn');
+      setBusy(btn,true,'SENDING…');
+      $('downloadReportBtn').disabled=true;
       try{
-        const rows=state.reportRows||await fetchReportRows();const report=await buildExcelReport(rows,preparedBy);
+        if(!Array.isArray(state.reportRows))state.reportRows=await fetchReportRows();
+        const report=await buildExcelReport(state.reportRows,preparedBy);
+        const attachmentBase64=toBase64(report.buffer);
+        if(!attachmentBase64)throw new Error('The Excel attachment could not be encoded.');
         const requestId='ho_'+Date.now()+'_'+Math.random().toString(36).slice(2,12);
-        const payload={requestId,to:recipient,filename:reportFilename(),attachmentBase64:toBase64(report.buffer),rowCount:report.rowCount,totalQty:report.totalQty};
-        const form=new URLSearchParams();form.set('payload',JSON.stringify(payload));
-        // Apps Script does not expose configurable CORS headers. A simple form-encoded
-        // no-cors POST avoids browser preflight; confirmation is read through JSONP doGet.
-        await fetch(EMAIL_SCRIPT_URL,{method:'POST',mode:'no-cors',redirect:'follow',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:form.toString()});
+        const payload={
+          requestId,
+          to:recipient,
+          filename:reportFilename(),
+          attachmentBase64,
+          rowCount:report.rowCount,
+          totalQty:report.totalQty
+        };
+        const form=new URLSearchParams();
+        form.set('payload',JSON.stringify(payload));
+        // Keep the deployed Apps Script form endpoint contract: no-cors avoids
+        // preflight, and the JSONP status endpoint confirms completion.
+        await fetch(EMAIL_SCRIPT_URL,{
+          method:'POST',
+          mode:'no-cors',
+          redirect:'follow',
+          headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+          body:form.toString()
+        });
         await waitForAppsScriptEmail(requestId);
-        showToast(`Excel report emailed to ${recipient}.`,6500);closeReportModal();
+        showToast(`Excel report emailed to ${recipient}.`,6500);
+        closeReportModal();
       }catch(err){
-        const message=err?.message||String(err);showToast('Email report failed: '+message,10000);console.error('HO Lens Apps Script email failed:',err);
-      }finally{setBusy(btn,false,'EMAIL REPORT');$('downloadReportBtn').disabled=!state.reportRows;}
+        console.error('HO Lens Apps Script email failed:',err);
+        showToast('Email report failed: '+(err?.message||String(err)),10000);
+      }finally{
+        setBusy(btn,false,'EMAIL REPORT');
+        $('downloadReportBtn').disabled=!Array.isArray(state.reportRows);
+      }
     }
 
 
